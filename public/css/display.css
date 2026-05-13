@@ -88,6 +88,16 @@ html, body {
 .header-status-dot.connected { background: #4ADE80; box-shadow: 0 0 6px rgba(74,222,128,.5); }
 .fs-btn { background: none; border: none; cursor: pointer; padding: 6px; color: rgba(255,255,255,.5); display: flex; align-items: center; transition: color .15s; }
 .fs-btn:hover { color: rgba(255,255,255,.9); }
+.header-photo-count {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,.85);
+  letter-spacing: .02em;
+}
 
 /* Main layout: câmera + texto */
 .preview-main {
@@ -249,7 +259,7 @@ html, body {
   width: fit-content;
   box-shadow: 0 20px 60px rgba(0,0,0,.3);
   display: flex; align-items: center; justify-content: center;
-  min-width: 232px; min-height: 232px;
+  min-width: 332px; min-height: 332px;
 }
 .qr-loader { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .qr-count  { font-size: 12px; color: rgba(255,255,255,.6); margin: 0; }

@@ -1,14 +1,20 @@
 /* ══════════════════════════════════════════════════════════
-   DISPLAY.JS — Globo Photo Booth Totem
-   Estrutura de captura idêntica ao fotototem-ref/CameraFeed.tsx
-   QR via api.qrserver.com (sem biblioteca, como react-qr-code mas mais simples)
+   DISPLAY.JS — Globo Photo Booth Totem v2
+   
+   Melhorias v2:
+   ✅ Sessão persistente (localStorage + ?code= + auto-reconnect)
+   ✅ Feedback sonoro na contagem (AudioContext beeps)
+   ✅ Resultado otimizado para fila (12s, QR 300px, "Próximo")
+   ✅ Atalhos de teclado (Espaço=capturar, Escape=voltar)
+   ✅ Contador de fotos no header
    ══════════════════════════════════════════════════════════ */
 
 (() => {
   'use strict';
 
-  /* ── DOM ── */
   const $ = id => document.getElementById(id);
+
+  /* ── DOM ── */
   const stateBooting  = $('state-booting');
   const statePreview  = $('state-preview');
   const stateResult   = $('state-result');
@@ -33,6 +39,7 @@
   const qrLoader      = $('qr-loader');
   const qrBody        = $('qr-body');
   const photoCountEl  = $('photo-count');
+  const photoCountHdr = $('photo-count-header');
   const resetBar      = $('reset-bar');
   const captureCanvas = $('capture-canvas');
   const btnDownload   = $('btn-download');
@@ -44,14 +51,15 @@
   let aspectRatio   = '4:5';
   let capturing     = false;
   let resultTimeout = null;
-  let lastDataUrl   = null; // for download button
+  let lastDataUrl   = null;
+  let photoTotal    = 0;
+  let currentTimer  = 3;
 
-  const RESULT_MS = 18000;
+  const RESULT_MS = 12000; // 12s — otimizado para fila
 
-  /* Resoluções de captura — idênticas ao fotototem-ref/CameraFeed.tsx */
   const RESOLUTIONS = {
-    '4:5':  { w: 1080, h: 1920 }, // portrait 9:16
-    '16:9': { w: 1440, h: 1080 }, // landscape
+    '4:5':  { w: 1080, h: 1920 },
+    '16:9': { w: 1440, h: 1080 },
   };
 
   const IDLE_MSGS = [
@@ -66,13 +74,47 @@
   let camFilters = { brightness: 100, contrast: 100, saturation: 100 };
   let camZoom = 1;
 
-  const socket = io();
+  /* ── Audio Context for countdown beeps ── */
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch { audioCtx = null; }
+    }
+  }
+
+  function playBeep(freq = 440, duration = 80) {
+    if (!audioCtx) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.value = 0.3;
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + duration / 1000);
+    } catch { /* audio not available */ }
+  }
+
+  /* ── Socket with auto-reconnect ── */
+  const socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: Infinity,
+  });
 
   /* ═══ INIT ═══ */
   async function init() {
     showState('booting');
     bootingMsg.textContent = 'Detectando câmera…';
     bootingSub.textContent  = 'Aguarde um instante';
+
+    // Init audio on first user interaction
+    document.addEventListener('click', () => initAudio(), { once: true });
+    document.addEventListener('keydown', () => initAudio(), { once: true });
 
     try {
       const r = await fetch('/api/gphoto/status');
@@ -90,16 +132,56 @@
       await startWebcamMode();
     }
 
-    createSession();
+    createOrRejoinSession();
     startIdleMessages();
+    setupKeyboardShortcuts();
   }
 
-  /* ── State switcher ── */
   function showState(name) {
     [stateBooting, statePreview, stateResult, stateError].forEach(el => el.classList.add('hidden'));
     ({ booting: stateBooting, preview: statePreview, result: stateResult, error: stateError }[name])
       ?.classList.remove('hidden');
   }
+
+  /* ═══ PERSISTENT SESSION ═══
+     Priority:
+     1. ?code=XXXX in URL (forced)
+     2. localStorage saved code (auto-reconnect)
+     3. Generate new code
+  */
+  function createOrRejoinSession() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlCode = urlParams.get('code')?.toUpperCase();
+    const savedCode = localStorage.getItem('globo-booth-code');
+    const requestedCode = urlCode || savedCode || null;
+
+    socket.emit('create-session', { requestedCode }, ({ code, rejoined, photoCount }) => {
+      sessionCode = code;
+      sessionCodeEl.textContent = code;
+      localStorage.setItem('globo-booth-code', code);
+
+      if (photoCount) {
+        photoTotal = photoCount;
+        updatePhotoCount();
+      }
+
+      if (rejoined) {
+        console.log('Rejoined session:', code);
+      }
+
+      // Load frame for current aspect ratio
+      loadFrame();
+    });
+  }
+
+  // Auto-reconnect: when socket reconnects, rejoin the same session
+  socket.on('connect', () => {
+    if (sessionCode) {
+      socket.emit('create-session', { requestedCode: sessionCode }, ({ code }) => {
+        sessionCodeEl.textContent = code;
+      });
+    }
+  });
 
   /* ═══ GPHOTO2 MODE ═══ */
   function startGphotoMode(cam) {
@@ -111,7 +193,7 @@
     showState('preview');
   }
 
-  /* ═══ WEBCAM MODE — tenta 4K → FHD → HD ═══ */
+  /* ═══ WEBCAM MODE ═══ */
   async function startWebcamMode() {
     bootingMsg.textContent = 'Abrindo câmera…';
     const attempts = [
@@ -144,7 +226,7 @@
     }, 4000);
   }
 
-  /* ── CSS filters (webcam quality fallback) ── */
+  /* ── CSS filters ── */
   function applyCamControl(cmd) {
     if (cmd.brightness !== undefined) camFilters.brightness = Math.round(100 + cmd.brightness * 10);
     if (cmd.contrast   !== undefined) camFilters.contrast   = cmd.contrast;
@@ -157,16 +239,10 @@
     gphotoFeed.style.transform = `scaleX(-1) scale(${camZoom})`;
   }
 
-  /* ─────────────────────────────────────────
-     QR CODE — sem biblioteca JS.
-     api.qrserver.com gera PNG/SVG on-demand
-     via parâmetro GET — 100% confiável,
-     mesmo resultado que react-qr-code do ref.
-     ───────────────────────────────────────── */
+  /* ── QR Code via API (no library) ── */
   function generateQR(url) {
-    // Build QR image URL — same as react-qr-code but via free API
     const encoded = encodeURIComponent(url);
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=003B71&bgcolor=FFFFFF&data=${encoded}&margin=10&ecc=L`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=003B71&bgcolor=FFFFFF&data=${encoded}&margin=12&ecc=L`;
 
     qrLoader.style.display = 'flex';
     qrImg.style.display    = 'none';
@@ -177,17 +253,15 @@
       qrBody.textContent = 'Aponte a câmera do celular para abrir a foto.';
     };
     qrImg.onerror = () => {
-      qrLoader.innerHTML = '<p style="font-size:12px;color:#c00;text-align:center">Sem acesso à internet para gerar QR</p>';
+      qrLoader.innerHTML = '<p style="font-size:12px;color:#c00;text-align:center">Sem internet para QR</p>';
     };
     qrImg.src = qrUrl;
   }
 
-  /* ── Session ── */
-  function createSession() {
-    socket.emit('create-session', ({ code }) => {
-      sessionCode = code;
-      sessionCodeEl.textContent = code;
-    });
+  /* ── Photo counter ── */
+  function updatePhotoCount() {
+    if (photoCountEl) photoCountEl.textContent = `Foto ${photoTotal} do evento`;
+    if (photoCountHdr) photoCountHdr.textContent = `📷 ${photoTotal}`;
   }
 
   /* ═══ SOCKET EVENTS ═══ */
@@ -201,6 +275,7 @@
     $('status-text').textContent = 'Aguardando controle…';
   });
   socket.on('settings-updated', s => {
+    if (s.timer) currentTimer = s.timer;
     if (s.aspectRatio && s.aspectRatio !== aspectRatio) {
       aspectRatio = s.aspectRatio;
       stageCard.dataset.ratio = aspectRatio;
@@ -219,8 +294,32 @@
   socket.on('cam-control', ({ cmd }) => applyCamControl(cmd));
   socket.on('show-photo', ({ url }) => { if (url) showResult(url, false); });
   socket.on('photo-ready', ({ total }) => {
-    photoCountEl.textContent = `Foto ${total} do evento`;
+    photoTotal = total;
+    updatePhotoCount();
   });
+
+  // Operator pressed "Next" on controller
+  socket.on('reset-to-preview', () => {
+    resetToPreview();
+  });
+
+  /* ═══ KEYBOARD SHORTCUTS ═══ */
+  function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      // Space = trigger capture (same as pressing capture button)
+      if (e.code === 'Space' && !capturing && !stateResult.classList.contains('hidden') === false) {
+        e.preventDefault();
+        if (!statePreview.classList.contains('hidden')) {
+          startCountdown(currentTimer);
+        }
+      }
+      // Escape = back to preview
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        resetToPreview();
+      }
+    });
+  }
 
   /* ═══ CAPTURE FLOW ═══ */
 
@@ -234,8 +333,16 @@
       countdownNum.style.animation = 'none';
       void countdownNum.offsetWidth;
       countdownNum.style.animation = 'countPop .7s ease both';
+
+      // Audio beep on each countdown tick
+      playBeep(i === 1 ? 880 : 440, i === 1 ? 200 : 80);
+
       await sleep(1000);
     }
+
+    // Capture beep — higher pitch, longer
+    playBeep(1200, 150);
+
     countdownNum.textContent = '📸';
     await sleep(200);
     countdownOvl.classList.add('hidden');
@@ -248,7 +355,6 @@
     overlayText.textContent = IDLE_MSGS[msgIdx];
   }
 
-  /* ── gphoto2 (Sony A7III full-res) ── */
   async function doGphotoCapture() {
     triggerFlash();
     showState('result');
@@ -271,12 +377,10 @@
     } catch { showState('preview'); }
   }
 
-  /* ── Webcam (canvas) — exatamente como fotototem-ref/CameraFeed.tsx captureImage() ── */
   async function doWebcamCapture() {
     triggerFlash();
 
-    /* fotototem-ref usa OUTPUT_WIDTH/HEIGHT fixos e calcula crop para cover */
-    const res  = RESOLUTIONS[aspectRatio];
+    const res = RESOLUTIONS[aspectRatio];
     captureCanvas.width  = res.w;
     captureCanvas.height = res.h;
     const ctx = captureCanvas.getContext('2d');
@@ -288,16 +392,13 @@
 
     let drawW, drawH, offX, offY;
     if (videoAspect > canvasAspect) {
-      /* vídeo mais largo — corta lados */
       drawH = res.h; drawW = res.h * videoAspect;
       offX = (res.w - drawW) / 2; offY = 0;
     } else {
-      /* vídeo mais alto — corta topo/baixo */
       drawW = res.w; drawH = res.w / videoAspect;
       offX = 0; offY = (res.h - drawH) / 2;
     }
 
-    /* Espelha (como -scale-x-100 do fotototem-ref) + filtros CSS */
     ctx.save();
     ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     ctx.translate(res.w, 0);
@@ -306,7 +407,6 @@
     ctx.restore();
     ctx.filter = 'none';
 
-    /* Composite frame — idêntico ao fotototem-ref captureImage() linhas 95-107 */
     if (frameOverlay.classList.contains('loaded') && frameOverlay.naturalWidth > 0) {
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
     }
@@ -317,7 +417,6 @@
     showResult(dataUrl, true);
     setupDownload(dataUrl);
 
-    /* Upload para ImgBB via proxy do servidor */
     qrBody.textContent = 'Gerando link para compartilhamento…';
     qrLoader.innerHTML = '<div class="spinner" style="border-color:rgba(0,59,113,.12);border-top-color:#003B71"></div><p style="font-size:12px;color:#666;margin:4px 0 0">Enviando…</p>';
     qrLoader.style.display = 'flex';
@@ -344,7 +443,6 @@
     }
   }
 
-  /* ── Flash ── */
   function triggerFlash() {
     flashOvl.classList.remove('hidden');
     flashOvl.style.animation = 'none';
@@ -353,7 +451,8 @@
     setTimeout(() => flashOvl.classList.add('hidden'), 600);
   }
 
-  /* ── Result ── */
+  /* ═══ RESULT ═══ */
+
   function showResult(src, startTimer) {
     if (src) resultPhoto.src = src;
     showState('result');
@@ -364,11 +463,15 @@
       void resetBar.offsetWidth;
       resetBar.style.transition = `width ${RESULT_MS}ms linear`;
       resetBar.style.width = '0%';
-      resultTimeout = setTimeout(() => showState('preview'), RESULT_MS);
+      resultTimeout = setTimeout(resetToPreview, RESULT_MS);
     }
   }
 
-  /* ── Download button (fotototem-ref has this too) ── */
+  function resetToPreview() {
+    if (resultTimeout) { clearTimeout(resultTimeout); resultTimeout = null; }
+    showState('preview');
+  }
+
   function setupDownload(dataUrl) {
     btnDownload.classList.remove('hidden');
     btnDownload.onclick = () => {
@@ -381,7 +484,6 @@
     };
   }
 
-  /* ── Frame loader ── */
   function loadFrame() {
     if (!sessionCode) return;
     const url = `/api/frame/${sessionCode}?ratio=${aspectRatio}&t=${Date.now()}`;

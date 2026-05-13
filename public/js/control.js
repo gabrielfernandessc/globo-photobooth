@@ -1,8 +1,12 @@
 /* ══════════════════════════════════════════════════════════
-   CONTROL.JS — Lógica do controle remoto
-   Tabs: Foto | Galeria | Câmera
-   Galeria: re-exibe fotos no display via socket
-   Câmera: controles via ImageCapture API
+   CONTROL.JS — Controle Remoto v2
+   
+   Melhorias v2:
+   ✅ Sessão persistente (localStorage + auto-reconnect)
+   ✅ Botão "Próximo" (reset-to-preview)
+   ✅ Galeria com timestamp
+   ✅ Feedback haptic mais forte
+   ✅ Botão desconectar
    ══════════════════════════════════════════════════════════ */
 
 (() => {
@@ -26,6 +30,7 @@
 
   /* ── DOM: Shoot ── */
   const captureBtn    = document.getElementById('capture-btn');
+  const btnNext       = document.getElementById('btn-next');
   const timerPills    = document.querySelectorAll('[data-timer]');
   const ratioPills    = document.querySelectorAll('[data-ratio]:not(.frame-btn)');
   const btnFrame4x5   = document.getElementById('btn-frame-4x5');
@@ -56,17 +61,64 @@
   let selectedTimer   = 3;
   let selectedRatio   = '4:5';
   let pendingFrameRatio = null;
-  let photoLog        = []; // {url, thumbnail}
+  let photoLog        = [];
   let photoTotal      = 0;
   let capturing       = false;
-  let imageCapture    = null; // ImageCapture instance (from display via relay)
 
-  /* ── Socket ── */
-  const socket = io();
+  /* ── Socket with auto-reconnect ── */
+  const socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: Infinity,
+  });
+
+  /* ═══ AUTO-RECONNECT ON PAGE LOAD ═══
+     If we have a saved session code, try to rejoin immediately
+     without showing the pairing screen. */
+  (function tryAutoReconnect() {
+    const saved = localStorage.getItem('globo-booth-ctrl-code');
+    if (saved) {
+      sessionCode = saved;
+      socket.emit('join-session', saved, (res) => {
+        if (res.success) {
+          if (res.settings) applySettings(res.settings);
+          pairingScreen.classList.add('hidden');
+          controlScreen.classList.remove('hidden');
+          setStatus(true);
+          if (res.photoCount) {
+            ctrlCount.textContent = `${res.photoCount} fotos`;
+          }
+        } else {
+          // Session expired — clear and show pairing
+          localStorage.removeItem('globo-booth-ctrl-code');
+          sessionCode = null;
+        }
+      });
+    }
+  })();
+
+  /* ── Auto-rejoin on socket reconnect ── */
+  socket.on('connect', () => {
+    if (sessionCode) {
+      socket.emit('join-session', sessionCode, (res) => {
+        if (res.success) {
+          setStatus(true);
+        } else {
+          setStatus(false);
+          ctrlStatusTxt.textContent = 'Sessão expirou';
+        }
+      });
+    }
+  });
+
+  /* ── Display reconnected after refresh ── */
+  socket.on('display-reconnected', () => {
+    setStatus(true);
+    ctrlStatusTxt.textContent = 'Reconectado';
+  });
 
   /* ═══ PAIRING ═══ */
 
-  // Digit inputs — auto-advance
   digits.forEach((inp, i) => {
     inp.addEventListener('input', () => {
       inp.value = inp.value.slice(-1).toUpperCase();
@@ -91,7 +143,7 @@
   btnConnect.addEventListener('click', connect);
 
   function connect() {
-    const code = digits.map(d => d.value).join('');
+    const code = digits.map(d => d.value).join('').toUpperCase();
     btnConnect.disabled = true;
     pairError.classList.add('hidden');
 
@@ -104,6 +156,7 @@
         digits[0].focus();
       } else {
         sessionCode = code;
+        localStorage.setItem('globo-booth-ctrl-code', code);
         if (res.settings) applySettings(res.settings);
         pairingScreen.classList.add('hidden');
         controlScreen.classList.remove('hidden');
@@ -153,18 +206,51 @@
     photoTotal = total;
     ctrlCount.textContent = `${total} fotos`;
     addToGallery(url, thumbnail || url);
-    vibrate([50, 30, 50]);
+    vibrate([80, 50, 80]); // stronger feedback
   });
 
-  /* ═══ GALLERY ═══ */
+  /* ═══ NEXT BUTTON — reset display to preview ═══ */
+
+  if (btnNext) {
+    btnNext.addEventListener('click', () => {
+      if (!sessionCode) return;
+      socket.emit('reset-to-preview', { code: sessionCode });
+      vibrate(30);
+    });
+  }
+
+  /* ═══ DISCONNECT BUTTON ═══ */
+
+  const btnDisconnect = document.getElementById('btn-disconnect');
+  if (btnDisconnect) {
+    btnDisconnect.addEventListener('click', () => {
+      localStorage.removeItem('globo-booth-ctrl-code');
+      sessionCode = null;
+      photoLog = [];
+      photoTotal = 0;
+      controlScreen.classList.add('hidden');
+      pairingScreen.classList.remove('hidden');
+      digits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
+      digits[0].focus();
+      setStatus(false);
+    });
+  }
+
+  /* ═══ GALLERY — with timestamp ═══ */
 
   function addToGallery(url, thumb) {
-    photoLog.push({ url, thumb });
+    const ts = Date.now();
+    photoLog.push({ url, thumb, ts });
     noPhotos.style.display = 'none';
 
     const item = document.createElement('div');
     item.className = 'gallery-thumb';
-    item.innerHTML = `<img src="${thumb}" alt="foto" loading="lazy">`;
+    const time = new Date(ts);
+    const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+    item.innerHTML = `
+      <img src="${thumb}" alt="foto" loading="lazy">
+      <span class="gallery-time">${timeStr}</span>
+    `;
     item.addEventListener('click', () => {
       socket.emit('show-photo', { code: sessionCode, url });
       vibrate(30);
@@ -243,16 +329,12 @@
     }
   });
 
-  /* ═══ CAMERA CONTROLS via relay ═══ */
-  // Controls are sent to display via socket; display applies via ImageCapture API
+  /* ═══ CAMERA CONTROLS ═══ */
 
   function sendCamControl(cmd) {
     socket.emit('cam-control', { code: sessionCode, cmd });
   }
 
-  /* ═══ CAMERA CONTROLS ═══ */
-
-  // Detect gphoto2 on tab open
   let gphotoMode = false;
   document.getElementById('tab-camera').addEventListener('click', () => {
     if (!gphotoMode) loadGphotoStatus();
@@ -266,7 +348,6 @@
         gphotoMode = true;
         renderGphotoControls(d.camera);
       }
-      // else: CSS filter sliders are already visible (default HTML)
     } catch {}
   }
 
@@ -360,8 +441,6 @@
     sendCamControl({ brightness: 0, contrast: 100, saturation: 100, zoom: 1 });
   });
 
-
-
   /* ═══ DISCONNECT ═══ */
 
   socket.on('display-disconnected', () => {
@@ -369,7 +448,6 @@
     ctrlStatusTxt.textContent = 'Totem desconectado';
   });
 
-  /* ── Vibrate ── */
   function vibrate(pattern) {
     if (navigator.vibrate) navigator.vibrate(pattern);
   }

@@ -291,3 +291,64 @@ html, body {
   line-height: 1.5;
   margin-top: 4px;
 }
+
+/* ── Next button ── */
+.btn-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 0;
+  border: 1.5px solid var(--preto-25);
+  border-radius: var(--radius);
+  background: var(--preto-5);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--preto-50);
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-next:hover {
+  border-color: var(--azul);
+  color: var(--azul);
+  background: rgba(5,166,255,.04);
+}
+.btn-next:active { transform: scale(.97); }
+
+/* ── Disconnect button ── */
+.btn-disconnect-small {
+  background: none;
+  border: 1px solid var(--preto-25);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--preto-50);
+  transition: all .15s;
+}
+.btn-disconnect-small:hover {
+  border-color: var(--vermelho);
+  color: var(--vermelho);
+}
+
+/* ── Gallery timestamp ── */
+.gallery-thumb {
+  position: relative;
+}
+.gallery-time {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0,0,0,.65);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  pointer-events: none;
+}

@@ -20,7 +20,7 @@ app.use(express.static('public'));
 app.use(express.json({ limit: '20mb' }));
 
 function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O 1/I
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code;
   do {
     code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -89,11 +89,9 @@ app.get('/api/photos/:code', (req, res) => {
 
 /* ── GPHOTO2 INTEGRATION ──────────────────────────────── */
 
-// USB lock: prevent preview + capture at same time
 let gphotoCapturing = false;
 let previewRunning = false;
 
-// Check gphoto2 + camera availability
 app.get('/api/gphoto/status', async (req, res) => {
   try {
     const { stdout } = await execAsync('gphoto2 --auto-detect 2>&1');
@@ -106,7 +104,6 @@ app.get('/api/gphoto/status', async (req, res) => {
   }
 });
 
-// MJPEG live preview stream (12fps, pauses during capture)
 app.get('/api/gphoto/preview', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'multipart/x-mixed-replace; boundary=--frame',
@@ -124,7 +121,7 @@ app.get('/api/gphoto/preview', (req, res) => {
     const proc = spawn('gphoto2', ['--capture-preview', '--stdout'], { timeout: 3000 });
     const chunks = [];
     proc.stdout.on('data', c => chunks.push(c));
-    proc.stderr.on('data', () => {}); // silence
+    proc.stderr.on('data', () => {});
 
     proc.on('close', () => {
       if (!active) { previewRunning = false; return; }
@@ -136,7 +133,7 @@ app.get('/api/gphoto/preview', (req, res) => {
           res.write('\r\n');
         } catch { active = false; previewRunning = false; return; }
       }
-      setTimeout(sendFrame, 80); // ~12fps
+      setTimeout(sendFrame, 80);
     });
 
     proc.on('error', () => setTimeout(sendFrame, 500));
@@ -146,12 +143,10 @@ app.get('/api/gphoto/preview', (req, res) => {
   req.on('close', () => { active = false; });
 });
 
-// High-res capture via gphoto2 + auto-upload to ImgBB
 app.post('/api/gphoto/capture', async (req, res) => {
   if (gphotoCapturing) return res.status(429).json({ error: 'Capture already in progress' });
 
   gphotoCapturing = true;
-  // Wait for any in-flight preview frame to finish
   await new Promise(r => setTimeout(r, 150));
 
   try {
@@ -159,7 +154,6 @@ app.post('/api/gphoto/capture', async (req, res) => {
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir);
     const tmpFile = path.join(tmpDir, `cap_${Date.now()}.jpg`);
 
-    // Capture full-resolution image
     await execAsync(`gphoto2 --capture-image-and-download --filename="${tmpFile}" --force-overwrite`);
 
     if (!fs.existsSync(tmpFile)) throw new Error('Capture file not created');
@@ -167,7 +161,6 @@ app.post('/api/gphoto/capture', async (req, res) => {
     const imageData = fs.readFileSync(tmpFile).toString('base64');
     fs.unlinkSync(tmpFile);
 
-    // Upload to ImgBB
     const params = new URLSearchParams();
     params.append('image', imageData);
     params.append('key', process.env.IMGBB_API_KEY);
@@ -184,7 +177,6 @@ app.post('/api/gphoto/capture', async (req, res) => {
   }
 });
 
-// Get camera config options (ISO, aperture, shutter, WB, EV)
 app.get('/api/gphoto/config/:key', async (req, res) => {
   const allowed = {
     iso:      '/main/imgsettings/iso',
@@ -199,7 +191,6 @@ app.get('/api/gphoto/config/:key', async (req, res) => {
 
   try {
     const { stdout } = await execAsync(`gphoto2 --get-config "${config}" 2>&1`);
-    // Parse: Current / Choice lines
     const current = (stdout.match(/Current:\s*(.+)/) || [])[1]?.trim();
     const choices = [...stdout.matchAll(/Choice:\s*\d+\s+(.+)/g)].map(m => m[1].trim());
     res.json({ current, choices });
@@ -208,7 +199,6 @@ app.get('/api/gphoto/config/:key', async (req, res) => {
   }
 });
 
-// Set camera config
 app.post('/api/gphoto/config/:key', async (req, res) => {
   const allowed = {
     iso:      '/main/imgsettings/iso',
@@ -233,12 +223,43 @@ app.post('/api/gphoto/config/:key', async (req, res) => {
 });
 
 
+/* ═══════════════════════════════════════════════════════
+   SOCKET.IO — Sessão Persistente
+   
+   Regras:
+   1. create-session aceita code opcional → reutiliza sessão existente
+   2. Disconnect do display NÃO deleta a sessão (só nullifica displaySocket)
+   3. Disconnect do controle NÃO deleta a sessão (só nullifica controlSocket)
+   4. Sessão só é deletada após 24h de inatividade
+   5. Reconexão: display e controle podem re-join ao mesmo código
+   ═══════════════════════════════════════════════════════ */
 
 io.on('connection', (socket) => {
   console.log('+ connected', socket.id);
 
-  socket.on('create-session', (cb) => {
-    const code = generateCode();
+  /* ── Create or rejoin session (display side) ── */
+  socket.on('create-session', ({ requestedCode } = {}, cb) => {
+    // If a code was requested and the session exists, rejoin it
+    if (requestedCode && sessions.has(requestedCode)) {
+      const s = sessions.get(requestedCode);
+      // Update display socket to new connection
+      s.displaySocket = socket.id;
+      s.lastActivity = Date.now();
+      socket.join(requestedCode);
+      socket.sessionCode = requestedCode;
+
+      // Notify connected controller that display is back
+      if (s.controlSocket) {
+        io.to(s.controlSocket).emit('display-reconnected');
+      }
+
+      console.log('Display rejoined session:', requestedCode);
+      cb({ code: requestedCode, rejoined: true, photoCount: (s.photos || []).length });
+      return;
+    }
+
+    // Create new session (use requested code if unique, otherwise generate)
+    const code = (requestedCode && !sessions.has(requestedCode)) ? requestedCode : generateCode();
     sessions.set(code, {
       displaySocket: socket.id,
       controlSocket: null,
@@ -246,21 +267,30 @@ io.on('connection', (socket) => {
       settings: { timer: 3, aspectRatio: '4:5' },
       frame4x5: null,
       frame16x9: null,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
     });
     socket.join(code);
     socket.sessionCode = code;
-    cb({ code });
+    cb({ code, rejoined: false, photoCount: 0 });
     console.log('Session created:', code);
   });
 
+  /* ── Join session (controller side) ── */
   socket.on('join-session', (code, cb) => {
     const s = sessions.get(code);
     if (!s) return cb({ error: 'Código inválido' });
+
     s.controlSocket = socket.id;
+    s.lastActivity = Date.now();
     socket.join(code);
     socket.sessionCode = code;
-    io.to(s.displaySocket).emit('controller-connected');
+
+    // Notify display
+    if (s.displaySocket) {
+      io.to(s.displaySocket).emit('controller-connected');
+    }
+
     cb({
       success: true,
       settings: s.settings,
@@ -268,6 +298,7 @@ io.on('connection', (socket) => {
       hasFrame16x9: !!s.frame16x9,
       photoCount: (s.photos || []).length
     });
+
     // Send existing photos to the joining controller
     if (s.photos && s.photos.length > 0) {
       socket.emit('session-photos', { photos: s.photos });
@@ -275,59 +306,88 @@ io.on('connection', (socket) => {
     console.log('Controller joined:', code);
   });
 
+  /* ── Trigger capture ── */
   socket.on('trigger-capture', ({ code, timer }) => {
     const s = sessions.get(code);
-    if (s) io.to(s.displaySocket).emit('start-countdown', { timer });
+    if (s) {
+      s.lastActivity = Date.now();
+      if (s.displaySocket) io.to(s.displaySocket).emit('start-countdown', { timer });
+    }
   });
 
+  /* ── Photo uploaded ── */
   socket.on('photo-uploaded', ({ code, url, thumbnail }) => {
     const s = sessions.get(code);
     if (s) {
       s.photos.push({ url, thumbnail, ts: Date.now() });
+      s.lastActivity = Date.now();
       io.to(code).emit('photo-ready', { url, thumbnail, total: s.photos.length });
     }
   });
 
+  /* ── Update settings ── */
   socket.on('update-settings', ({ code, settings }) => {
     const s = sessions.get(code);
     if (s) {
       Object.assign(s.settings, settings);
+      s.lastActivity = Date.now();
       io.to(code).emit('settings-updated', s.settings);
     }
   });
 
-  // Re-show a photo on the display (from gallery tap)
+  /* ── Re-show photo on display (gallery tap) ── */
   socket.on('show-photo', ({ code, url }) => {
     const s = sessions.get(code);
-    if (s) io.to(s.displaySocket).emit('show-photo', { url });
+    if (s && s.displaySocket) io.to(s.displaySocket).emit('show-photo', { url });
   });
 
-  // Camera control relay: control → display
+  /* ── Reset to preview (operator "Next" button) ── */
+  socket.on('reset-to-preview', ({ code }) => {
+    const s = sessions.get(code);
+    if (s && s.displaySocket) io.to(s.displaySocket).emit('reset-to-preview');
+  });
+
+  /* ── Camera control relay ── */
   socket.on('cam-control', ({ code, cmd }) => {
     const s = sessions.get(code);
-    if (s) io.to(s.displaySocket).emit('cam-control', { cmd });
+    if (s && s.displaySocket) io.to(s.displaySocket).emit('cam-control', { cmd });
   });
 
+  /* ── Disconnect — DOES NOT DELETE SESSION ──
+     Session survives both display and controller disconnects.
+     Only cleaned up after 24h of inactivity. */
   socket.on('disconnect', () => {
     const code = socket.sessionCode;
     if (!code) return;
     const s = sessions.get(code);
     if (!s) return;
+
     if (s.displaySocket === socket.id) {
-      io.to(code).emit('display-disconnected');
-      sessions.delete(code);
+      s.displaySocket = null;
+      // Notify controller that display went away (but session lives)
+      if (s.controlSocket) {
+        io.to(s.controlSocket).emit('display-disconnected');
+      }
+      console.log('Display disconnected (session preserved):', code);
     } else if (s.controlSocket === socket.id) {
       s.controlSocket = null;
-      io.to(s.displaySocket).emit('controller-disconnected');
+      // Notify display that controller went away
+      if (s.displaySocket) {
+        io.to(s.displaySocket).emit('controller-disconnected');
+      }
+      console.log('Controller disconnected (session preserved):', code);
     }
   });
 });
 
-// Cleanup sessions older than 24h
+// Cleanup sessions older than 24h of inactivity
 setInterval(() => {
   const now = Date.now();
   for (const [code, s] of sessions) {
-    if (now - s.createdAt > 86400000) sessions.delete(code);
+    if (now - (s.lastActivity || s.createdAt) > 86400000) {
+      sessions.delete(code);
+      console.log('Session expired:', code);
+    }
   }
 }, 1800000);
 

@@ -57,7 +57,12 @@
         <span id="ctrl-status-text">Conectado</span>
       </div>
       <span class="ctrl-logo">Foto Totem</span>
-      <span class="ctrl-count" id="ctrl-count">0 fotos</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="ctrl-count" id="ctrl-count">0 fotos</span>
+        <button class="btn-disconnect-small" id="btn-disconnect" title="Desconectar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
     </div>
 
     <!-- TABS -->
@@ -72,6 +77,10 @@
       <div class="capture-row">
         <button class="capture-btn" id="capture-btn" disabled></button>
       </div>
+      <button class="btn-next" id="btn-next">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        Próximo da fila
+      </button>
 
       <div class="setting-block">
         <span class="setting-label">Timer</span>
