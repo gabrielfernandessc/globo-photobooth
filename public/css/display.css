@@ -6,8 +6,8 @@
 html, body {
   height: 100%; width: 100%;
   overflow: hidden;
-  background: #0A0A0A;
-  color: var(--branco);
+  background: #E8F4FE;
+  color: var(--preto);
   margin: 0; padding: 0;
 }
 
@@ -16,7 +16,7 @@ html, body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #0A0A0A;
+  background: #E8F4FE;
   position: relative;
   overflow: hidden;
 }
@@ -215,7 +215,7 @@ html, body {
 .state-result {
   position: fixed;
   inset: 0; z-index: 100;
-  background: #0A0A0A;
+  background: #E8F4FE;
   flex-direction: row;
   align-items: center;
   justify-content: center;
