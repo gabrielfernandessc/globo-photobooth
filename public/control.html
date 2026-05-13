@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Globo Photo Booth — Controle</title>
+  <link rel="stylesheet" href="/css/design-system.css">
+  <link rel="stylesheet" href="/css/control.css">
+</head>
+<body>
+  <div class="control-page" id="app">
+
+    <!-- Header -->
+    <div class="ctrl-header">
+      <div class="logo">Photo Booth</div>
+      <div class="subtitle">Controle remoto</div>
+    </div>
+
+    <!-- ═══ Pairing Screen ═══ -->
+    <div class="pairing-screen" id="pairing-screen">
+      <p class="pairing-title">Digite o código exibido na tela do totem</p>
+
+      <div class="code-inputs" id="code-inputs">
+        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="0">
+        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="1">
+        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="2">
+        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="3">
+        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="4">
+        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="5">
+      </div>
+
+      <p class="pairing-error" id="pairing-error"></p>
+
+      <button class="btn btn-primary btn-lg" id="btn-connect" disabled>Conectar</button>
+    </div>
+
+    <!-- ═══ Control Screen ═══ -->
+    <div class="control-screen hidden" id="control-screen">
+
+      <!-- Status -->
+      <div class="connection-status online" id="conn-status">
+        <span class="dot"></span>
+        <span id="conn-text">Conectado</span>
+      </div>
+
+      <!-- Capture -->
+      <div class="capture-section">
+        <button class="capture-btn" id="btn-capture" aria-label="Capturar foto">
+        </button>
+        <p class="capture-hint" id="capture-hint">Toque para capturar</p>
+      </div>
+
+      <!-- Photo counter -->
+      <div class="photo-counter">
+        Fotos: <span id="photo-count">0</span>
+      </div>
+
+      <!-- Settings -->
+      <div class="settings-panel">
+        <!-- Timer -->
+        <div class="setting-group">
+          <div class="setting-label">Contagem regressiva</div>
+          <div class="timer-options" id="timer-options">
+            <button class="pill active" data-timer="3">3s</button>
+            <button class="pill" data-timer="5">5s</button>
+            <button class="pill" data-timer="10">10s</button>
+          </div>
+        </div>
+
+        <!-- Aspect Ratio -->
+        <div class="setting-group">
+          <div class="setting-label">Proporção</div>
+          <div class="ratio-options" id="ratio-options">
+            <button class="pill active" data-ratio="4:5">4:5 Instagram</button>
+            <button class="pill" data-ratio="16:9">16:9 Widescreen</button>
+          </div>
+        </div>
+
+        <!-- Frame Upload -->
+        <div class="setting-group">
+          <div class="setting-label">Moldura (frame PNG)</div>
+          <div class="frame-upload-row">
+            <button class="frame-upload-btn" id="btn-frame-4x5" data-ratio="4:5">
+              📎 Frame 4:5
+            </button>
+            <button class="frame-upload-btn" id="btn-frame-16x9" data-ratio="16:9">
+              📎 Frame 16:9
+            </button>
+          </div>
+          <input type="file" id="frame-input" accept="image/png" style="display:none">
+        </div>
+      </div>
+
+      <!-- Last Photo -->
+      <div class="last-photo-section hidden" id="last-photo-section">
+        <div class="setting-label">Última foto</div>
+        <img id="last-photo-img" alt="Última foto capturada" />
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/control.js"></script>
+</body>
+</html>

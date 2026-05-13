@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Globo Photo Booth — Totem</title>
+  <link rel="stylesheet" href="/css/design-system.css">
+  <link rel="stylesheet" href="/css/display.css">
+</head>
+<body>
+  <div class="display-page" id="app">
+
+    <!-- ── Preview Mode ── -->
+    <div class="preview-container" id="preview-mode">
+      <div class="preview-wrapper" id="preview-wrapper" data-ratio="4:5">
+        <video id="camera-feed" autoplay playsinline muted></video>
+        <img id="frame-overlay" alt="" />
+
+        <!-- Countdown -->
+        <div class="countdown-overlay hidden" id="countdown-overlay">
+          <span class="countdown-number" id="countdown-number">3</span>
+        </div>
+        <!-- Flash -->
+        <div class="flash-overlay hidden" id="flash-overlay"></div>
+      </div>
+
+      <!-- Idle message -->
+      <div class="idle-message" id="idle-msg">Posicione-se e sorria! 📸</div>
+    </div>
+
+    <!-- ── Bottom Bar ── -->
+    <div class="bottom-bar">
+      <div class="session-code-display">
+        <span class="label">Código</span>
+        <span class="code" id="session-code">······</span>
+      </div>
+      <div class="status-bar">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Aguardando controle</span>
+      </div>
+      <span class="brand-mark">GLOBO BOOTH</span>
+    </div>
+
+    <!-- ── Result View (photo + QR) ── -->
+    <div class="result-view hidden" id="result-view">
+      <div class="result-content">
+        <img id="result-photo" class="result-photo" alt="Sua foto" />
+        <div class="qr-section">
+          <canvas id="qr-canvas"></canvas>
+          <p class="qr-label">Escaneie para baixar sua foto!</p>
+          <p class="qr-sublabel" id="photo-count"></p>
+        </div>
+      </div>
+      <div class="reset-timer">
+        <div class="bar" id="reset-bar"></div>
+      </div>
+    </div>
+
+    <!-- ── Camera Error ── -->
+    <div class="camera-error hidden" id="camera-error">
+      <span class="icon">📷</span>
+      <h2>Câmera não encontrada</h2>
+      <p>Verifique se a Sony A7III está conectada via Imaging Edge Desktop e tente novamente.</p>
+      <button class="btn btn-primary" onclick="location.reload()">Tentar novamente</button>
+    </div>
+  </div>
+
+  <!-- Hidden canvas for compositing -->
+  <canvas id="capture-canvas" style="display:none"></canvas>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="/js/display.js"></script>
+</body>
+</html>

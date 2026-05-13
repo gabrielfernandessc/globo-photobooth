@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Globo Photo Booth</title>
+  <link rel="stylesheet" href="/css/design-system.css">
+  <style>
+    .landing {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--s48);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .landing::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: var(--grad-globo);
+    }
+    .landing::after {
+      content: '';
+      position: fixed;
+      top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: radial-gradient(circle at 30% 20%, rgba(136,0,248,.08) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(5,166,255,.06) 0%, transparent 50%);
+      z-index: -1;
+    }
+    .hero-title {
+      font-size: clamp(44px, 8vw, 86px);
+      font-weight: 900;
+      background: var(--grad-globo);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: var(--s8);
+      animation: fadeIn .6s ease;
+    }
+    .hero-sub {
+      font-size: var(--body-m);
+      color: var(--preto-50);
+      margin-bottom: var(--s64);
+      animation: fadeIn .6s ease .1s both;
+    }
+    .actions {
+      display: flex;
+      gap: var(--s24);
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: slideUp .6s ease .2s both;
+    }
+    .action-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--s16);
+      padding: var(--s48) var(--s32);
+      width: 280px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius-lg);
+      transition: all .3s ease;
+      text-decoration: none;
+      color: var(--branco);
+    }
+    .action-card:hover {
+      background: rgba(255,255,255,.08);
+      border-color: var(--azul);
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-glow);
+      text-decoration: none;
+    }
+    .action-card .icon { font-size: 48px; }
+    .action-card h3 { font-size: var(--body-m); font-weight: 600; }
+    .action-card p { font-size: var(--label-g); color: var(--preto-50); }
+    .setup-section {
+      margin-top: var(--s96);
+      max-width: 500px;
+      animation: fadeIn .6s ease .4s both;
+    }
+    .setup-section h4 {
+      font-size: var(--body-p);
+      margin-bottom: var(--s16);
+      color: var(--preto-25);
+    }
+    .steps {
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s16);
+    }
+    .step {
+      display: flex;
+      gap: var(--s16);
+      align-items: flex-start;
+      padding: var(--s16);
+      background: rgba(255,255,255,.03);
+      border-radius: var(--radius-sm);
+    }
+    .step-num {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--azul);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--label-m);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-text {
+      font-size: var(--label-g);
+      color: var(--preto-25);
+      line-height: 1.6;
+    }
+    .footer-note {
+      margin-top: var(--s64);
+      font-size: var(--label-m);
+      color: var(--preto-50);
+      animation: fadeIn .6s ease .5s both;
+    }
+  </style>
+</head>
+<body>
+  <div class="landing">
+    <h1 class="hero-title">Photo Booth</h1>
+    <p class="hero-sub">Totem de foto para eventos corporativos</p>
+
+    <div class="actions">
+      <a href="/display.html" class="action-card" id="btn-display">
+        <span class="icon">🖥️</span>
+        <h3>Tela do totem</h3>
+        <p>Abra no computador conectado à câmera e à tela de exibição</p>
+      </a>
+      <a href="/control.html" class="action-card" id="btn-control">
+        <span class="icon">📱</span>
+        <h3>Controle remoto</h3>
+        <p>Abra no celular para controlar as fotos a distância</p>
+      </a>
+    </div>
+
+    <div class="setup-section">
+      <h4>Como funciona</h4>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-text">Abra a <strong>tela do totem</strong> no computador. Um código de 6 dígitos aparecerá.</div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-text">No celular, abra o <strong>controle remoto</strong> e digite o código para se conectar.</div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-text">Configure a moldura (frame) e a proporção. Pronto! Toque em capturar para tirar fotos.</div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-text">Após a foto, um QR Code aparece na tela. A pessoa escaneia e acessa a foto direto no celular.</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="footer-note">Globo Photo Booth · Powered by Node.js + Socket.IO</p>
+  </div>
+</body>
+</html>

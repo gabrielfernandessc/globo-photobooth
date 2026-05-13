@@ -1,0 +1,256 @@
+/* ══════════════════════════════════════════════════════════
+   DISPLAY PAGE — Tela do Totem (fullscreen)
+   ══════════════════════════════════════════════════════════ */
+
+html, body { height: 100%; overflow: hidden; }
+
+.display-page {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--preto-100);
+  position: relative;
+}
+
+/* ── Gradient accent line at top ── */
+.display-page::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--grad-globo);
+  z-index: 100;
+}
+
+/* ── Preview Container ── */
+.preview-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  padding: var(--s24);
+}
+
+.preview-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.preview-wrapper[data-ratio="4:5"] {
+  aspect-ratio: 4/5;
+  height: calc(100vh - 140px);
+}
+.preview-wrapper[data-ratio="16:9"] {
+  aspect-ratio: 16/9;
+  height: calc(100vh - 140px);
+}
+
+#camera-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scaleX(-1); /* mirror */
+}
+
+#frame-overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+#frame-overlay.loaded { opacity: 1; }
+
+/* ── Countdown Overlay ── */
+.countdown-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.countdown-number {
+  font-size: 180px;
+  font-weight: 900;
+  color: var(--branco);
+  text-shadow: 0 0 60px rgba(5,166,255,.6);
+  animation: countPop .7s ease both;
+}
+
+/* ── Flash ── */
+.flash-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--branco);
+  z-index: 15;
+  animation: flashEffect .5s ease-out forwards;
+}
+
+/* ── Bottom Bar ── */
+.bottom-bar {
+  width: 100%;
+  padding: var(--s16) var(--s32);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255,255,255,.03);
+  border-top: 1px solid rgba(255,255,255,.06);
+  flex-shrink: 0;
+}
+
+.session-code-display {
+  display: flex;
+  align-items: center;
+  gap: var(--s16);
+}
+.session-code-display .label {
+  font-size: var(--label-g);
+  color: var(--preto-50);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.session-code-display .code {
+  font-size: var(--title-p);
+  font-weight: 700;
+  letter-spacing: 6px;
+  background: var(--grad-globo);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--preto-50);
+  transition: background .3s;
+}
+.status-dot.connected { background: #00c853; box-shadow: 0 0 8px #00c853; }
+
+.brand-mark {
+  font-size: var(--label-g);
+  color: var(--preto-50);
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+/* ── Status indicator ── */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  font-size: var(--label-g);
+  color: var(--preto-50);
+}
+
+/* ── Result View ── */
+.result-view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--preto-100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn .4s ease;
+}
+
+.result-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s64);
+  padding: var(--s48);
+  max-height: 85vh;
+}
+
+.result-photo {
+  max-height: 70vh;
+  max-width: 50vw;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  object-fit: contain;
+}
+
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s24);
+  animation: slideUp .5s ease .2s both;
+}
+
+.qr-section canvas {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+
+.qr-label {
+  font-size: var(--body-m);
+  font-weight: 500;
+  color: var(--branco);
+}
+.qr-sublabel {
+  font-size: var(--label-g);
+  color: var(--preto-50);
+}
+
+/* ── Reset Timer Bar ── */
+.reset-timer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 6px;
+  background: rgba(255,255,255,.1);
+}
+.reset-timer .bar {
+  height: 100%;
+  background: var(--grad-globo);
+  transition: width linear;
+}
+
+/* ── Idle message ── */
+.idle-message {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--body-m);
+  color: rgba(255,255,255,.5);
+  text-align: center;
+  animation: pulse 3s ease infinite;
+  z-index: 3;
+  text-shadow: 0 2px 10px rgba(0,0,0,.8);
+  pointer-events: none;
+}
+
+/* ── Camera error ── */
+.camera-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s16);
+  padding: var(--s48);
+  text-align: center;
+}
+.camera-error .icon { font-size: 64px; }
+.camera-error h2 { font-size: var(--title-p); }
+.camera-error p { color: var(--preto-50); max-width: 400px; }
