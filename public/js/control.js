@@ -250,6 +250,82 @@
     socket.emit('cam-control', { code: sessionCode, cmd });
   }
 
+  /* ═══ CAMERA CONTROLS ═══ */
+
+  // Detect gphoto2 on tab open
+  let gphotoMode = false;
+  document.getElementById('tab-camera').addEventListener('click', () => {
+    if (!gphotoMode) loadGphotoStatus();
+  }, { once: true });
+
+  async function loadGphotoStatus() {
+    try {
+      const r = await fetch('/api/gphoto/status');
+      const d = await r.json();
+      if (d.available) {
+        gphotoMode = true;
+        renderGphotoControls(d.camera);
+      }
+      // else: CSS filter sliders are already visible (default HTML)
+    } catch {}
+  }
+
+  async function renderGphotoControls(cameraName) {
+    const panel = document.getElementById('panel-camera');
+    panel.innerHTML = `
+      <p class="camera-hint" style="color:var(--azul);font-weight:600">🎛 ${cameraName}</p>
+      <p class="camera-hint">Configurações reais da câmera Sony via USB.</p>
+      <div class="cam-control" id="sony-controls">
+        <p style="font-size:13px;color:var(--preto-50);text-align:center">Carregando…</p>
+      </div>
+    `;
+
+    const keys = ['iso', 'shutter', 'aperture', 'wb', 'ev', 'focus'];
+    const labels = { iso: 'ISO', shutter: 'Velocidade', aperture: 'Abertura', wb: 'Bal. Branco', ev: 'Exp. Comp.', focus: 'Foco' };
+    const container = document.getElementById('sony-controls');
+    container.innerHTML = '';
+
+    for (const key of keys) {
+      try {
+        const r = await fetch(`/api/gphoto/config/${key}`);
+        const d = await r.json();
+        if (!d.choices || d.choices.length === 0) continue;
+
+        const row = document.createElement('div');
+        row.className = 'cam-ctrl-row';
+        const sel = document.createElement('select');
+        sel.id = `gp-${key}`;
+        d.choices.forEach(ch => {
+          const opt = document.createElement('option');
+          opt.value = ch; opt.textContent = ch;
+          if (ch === d.current) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener('change', () => setGphotoConfig(key, sel.value));
+        row.innerHTML = `<span class="cam-label">${labels[key]}</span>`;
+        row.appendChild(sel);
+        container.appendChild(row);
+      } catch {}
+    }
+
+    const resetRow = document.createElement('div');
+    resetRow.innerHTML = `<button class="btn btn-outline btn-sm" onclick="location.reload()">Recarregar configs</button>`;
+    container.appendChild(resetRow);
+  }
+
+  async function setGphotoConfig(key, value) {
+    try {
+      await fetch(`/api/gphoto/config/${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value })
+      });
+    } catch (err) {
+      console.error('Config error:', err);
+    }
+  }
+
+  // CSS filter controls (fallback for webcam mode)
   ctrlBrightness.addEventListener('input', () => {
     valBrightness.textContent = ctrlBrightness.value;
     sendCamControl({ brightness: parseFloat(ctrlBrightness.value) });
@@ -283,6 +359,8 @@
     ctrlFocusMode.value = ''; focusDistRow.style.display = 'none';
     sendCamControl({ brightness: 0, contrast: 100, saturation: 100, zoom: 1 });
   });
+
+
 
   /* ═══ DISCONNECT ═══ */
 

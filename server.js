@@ -3,6 +3,11 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const multer = require('multer');
+const { exec, spawn } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+const execAsync = promisify(exec);
 
 const app = express();
 const server = http.createServer(app);
@@ -80,7 +85,152 @@ app.get('/api/photos/:code', (req, res) => {
   res.json({ photos: session.photos || [] });
 });
 
-/* ── SOCKET.IO ────────────────────────────────────────── */
+/* ── GPHOTO2 INTEGRATION ──────────────────────────────── */
+
+// USB lock: prevent preview + capture at same time
+let gphotoCapturing = false;
+let previewRunning = false;
+
+// Check gphoto2 + camera availability
+app.get('/api/gphoto/status', async (req, res) => {
+  try {
+    const { stdout } = await execAsync('gphoto2 --auto-detect 2>&1');
+    const lines = stdout.split('\n').filter(l => /usb:/i.test(l));
+    if (lines.length === 0) return res.json({ available: false });
+    const camera = lines[0].replace(/\s{2,}/g, ' — ').trim();
+    res.json({ available: true, camera });
+  } catch {
+    res.json({ available: false });
+  }
+});
+
+// MJPEG live preview stream (12fps, pauses during capture)
+app.get('/api/gphoto/preview', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'multipart/x-mixed-replace; boundary=--frame',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  let active = true;
+  previewRunning = true;
+
+  const sendFrame = () => {
+    if (!active) { previewRunning = false; return; }
+    if (gphotoCapturing) { setTimeout(sendFrame, 300); return; }
+
+    const proc = spawn('gphoto2', ['--capture-preview', '--stdout'], { timeout: 3000 });
+    const chunks = [];
+    proc.stdout.on('data', c => chunks.push(c));
+    proc.stderr.on('data', () => {}); // silence
+
+    proc.on('close', () => {
+      if (!active) { previewRunning = false; return; }
+      const frame = Buffer.concat(chunks);
+      if (frame.length > 512) {
+        try {
+          res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+          res.write(frame);
+          res.write('\r\n');
+        } catch { active = false; previewRunning = false; return; }
+      }
+      setTimeout(sendFrame, 80); // ~12fps
+    });
+
+    proc.on('error', () => setTimeout(sendFrame, 500));
+  };
+
+  sendFrame();
+  req.on('close', () => { active = false; });
+});
+
+// High-res capture via gphoto2 + auto-upload to ImgBB
+app.post('/api/gphoto/capture', async (req, res) => {
+  if (gphotoCapturing) return res.status(429).json({ error: 'Capture already in progress' });
+
+  gphotoCapturing = true;
+  // Wait for any in-flight preview frame to finish
+  await new Promise(r => setTimeout(r, 150));
+
+  try {
+    const tmpDir = path.join(__dirname, 'tmp');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir);
+    const tmpFile = path.join(tmpDir, `cap_${Date.now()}.jpg`);
+
+    // Capture full-resolution image
+    await execAsync(`gphoto2 --capture-image-and-download --filename="${tmpFile}" --force-overwrite`);
+
+    if (!fs.existsSync(tmpFile)) throw new Error('Capture file not created');
+
+    const imageData = fs.readFileSync(tmpFile).toString('base64');
+    fs.unlinkSync(tmpFile);
+
+    // Upload to ImgBB
+    const params = new URLSearchParams();
+    params.append('image', imageData);
+    params.append('key', process.env.IMGBB_API_KEY);
+
+    const response = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: params });
+    const data = await response.json();
+
+    gphotoCapturing = false;
+    res.json(data);
+  } catch (err) {
+    gphotoCapturing = false;
+    console.error('gphoto2 capture error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get camera config options (ISO, aperture, shutter, WB, EV)
+app.get('/api/gphoto/config/:key', async (req, res) => {
+  const allowed = {
+    iso:      '/main/imgsettings/iso',
+    aperture: '/main/capturesettings/f-number',
+    shutter:  '/main/capturesettings/shutterspeed',
+    wb:       '/main/imgsettings/whitebalance',
+    ev:       '/main/capturesettings/exposurecompensation',
+    focus:    '/main/capturesettings/focusmode',
+  };
+  const config = allowed[req.params.key];
+  if (!config) return res.status(400).json({ error: 'Unknown config' });
+
+  try {
+    const { stdout } = await execAsync(`gphoto2 --get-config "${config}" 2>&1`);
+    // Parse: Current / Choice lines
+    const current = (stdout.match(/Current:\s*(.+)/) || [])[1]?.trim();
+    const choices = [...stdout.matchAll(/Choice:\s*\d+\s+(.+)/g)].map(m => m[1].trim());
+    res.json({ current, choices });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set camera config
+app.post('/api/gphoto/config/:key', async (req, res) => {
+  const allowed = {
+    iso:      '/main/imgsettings/iso',
+    aperture: '/main/capturesettings/f-number',
+    shutter:  '/main/capturesettings/shutterspeed',
+    wb:       '/main/imgsettings/whitebalance',
+    ev:       '/main/capturesettings/exposurecompensation',
+    focus:    '/main/capturesettings/focusmode',
+  };
+  const config = allowed[req.params.key];
+  if (!config) return res.status(400).json({ error: 'Unknown config' });
+
+  const { value } = req.body;
+  if (value === undefined) return res.status(400).json({ error: 'No value' });
+
+  try {
+    await execAsync(`gphoto2 --set-config "${config}=${value}"`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 io.on('connection', (socket) => {
   console.log('+ connected', socket.id);
