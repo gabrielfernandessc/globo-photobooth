@@ -69,8 +69,8 @@
   // Digit inputs — auto-advance
   digits.forEach((inp, i) => {
     inp.addEventListener('input', () => {
-      inp.value = inp.value.slice(-1);
-      if (inp.value && i < 5) digits[i + 1].focus();
+      inp.value = inp.value.slice(-1).toUpperCase();
+      if (inp.value && i < 3) digits[i + 1].focus();
       checkReady();
     });
     inp.addEventListener('keydown', (e) => {

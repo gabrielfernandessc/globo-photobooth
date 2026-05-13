@@ -39,9 +39,9 @@ html, body {
   gap: 6px;
 }
 .code-inputs input {
-  width: 42px; height: 52px;
+  width: 52px; height: 60px;
   text-align: center;
-  font-size: 22px; font-weight: 700;
+  font-size: 24px; font-weight: 800;
   font-family: var(--font);
   background: var(--preto-5);
   border: 1.5px solid var(--preto-25);
@@ -49,8 +49,8 @@ html, body {
   color: var(--preto);
   outline: none;
   transition: all .15s;
-  -webkit-appearance: none;
-  -moz-appearance: textfield;
+  text-transform: uppercase;
+  letter-spacing: .05em;
 }
 .code-inputs input::-webkit-outer-spin-button,
 .code-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; }
@@ -61,6 +61,7 @@ html, body {
 }
 .code-inputs input.filled { border-color: var(--azul); }
 .pair-error { color: var(--vermelho); font-size: 13px; min-height: 18px; }
+.pair-hint  { font-size: 12px; color: var(--preto-50); text-align: center; }
 #pairing-screen .btn { width: 100%; max-width: 240px; }
 
 /* ════════════════════════════════

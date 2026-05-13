@@ -20,9 +20,11 @@ app.use(express.static('public'));
 app.use(express.json({ limit: '20mb' }));
 
 function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O 1/I
   let code;
-  do { code = Math.floor(100000 + Math.random() * 900000).toString(); }
-  while (sessions.has(code));
+  do {
+    code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  } while (sessions.has(code));
   return code;
 }
 

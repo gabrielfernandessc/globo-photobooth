@@ -168,7 +168,7 @@
   function createSession() {
     socket.emit('create-session', ({ code }) => {
       sessionCode = code;
-      sessionCodeEl.textContent = code.slice(0, 3) + ' ' + code.slice(3);
+      sessionCodeEl.textContent = code; // 4 chars, no space needed
     });
   }
 
@@ -176,12 +176,12 @@
 
   socket.on('controller-connected', () => {
     statusDot.classList.add('connected');
-    statusText.textContent = 'Controle conectado';
+    document.getElementById('status-text').textContent = '✓ Controle conectado';
   });
 
   socket.on('controller-disconnected', () => {
     statusDot.classList.remove('connected');
-    statusText.textContent = 'Aguardando controle';
+    document.getElementById('status-text').textContent = 'Aguardando controle…';
   });
 
   socket.on('settings-updated', (s) => {
