@@ -94,23 +94,28 @@
 
     <!-- ── TAB: Camera ── -->
     <div class="tab-panel hidden" id="panel-camera">
-      <p class="camera-hint">Controles da câmera via API do navegador.</p>
+      <p class="camera-hint">Ajustes aplicados em tempo real via filtro de vídeo.</p>
 
       <div class="cam-control">
         <div class="cam-ctrl-row">
           <span class="cam-label">Brilho</span>
-          <input type="range" id="ctrl-brightness" min="-5" max="5" step="0.5" value="0">
+          <input type="range" id="ctrl-brightness" min="-10" max="10" step="1" value="0">
           <span class="cam-val" id="val-brightness">0</span>
         </div>
         <div class="cam-ctrl-row">
           <span class="cam-label">Contraste</span>
-          <input type="range" id="ctrl-contrast" min="0" max="200" step="5" value="100">
-          <span class="cam-val" id="val-contrast">100</span>
+          <input type="range" id="ctrl-contrast" min="50" max="200" step="5" value="100">
+          <span class="cam-val" id="val-contrast">100%</span>
         </div>
         <div class="cam-ctrl-row">
           <span class="cam-label">Saturação</span>
           <input type="range" id="ctrl-saturation" min="0" max="200" step="5" value="100">
-          <span class="cam-val" id="val-saturation">100</span>
+          <span class="cam-val" id="val-saturation">100%</span>
+        </div>
+        <div class="cam-ctrl-row">
+          <span class="cam-label">Zoom</span>
+          <input type="range" id="ctrl-zoom" min="1" max="3" step="0.1" value="1">
+          <span class="cam-val" id="val-zoom">1x</span>
         </div>
         <div class="cam-ctrl-row">
           <span class="cam-label">Foco</span>
@@ -120,17 +125,12 @@
             <option value="manual">Manual</option>
           </select>
         </div>
-        <div class="cam-ctrl-row" id="focus-distance-row" style="display:none">
-          <span class="cam-label">Distância foco</span>
+        <div class="cam-ctrl-row hidden" id="focus-distance-row">
+          <span class="cam-label">Dist. foco</span>
           <input type="range" id="ctrl-focus-distance" min="0" max="100" step="1" value="50">
           <span class="cam-val" id="val-focus">50</span>
         </div>
-        <div class="cam-ctrl-row">
-          <span class="cam-label">Zoom</span>
-          <input type="range" id="ctrl-zoom" min="1" max="5" step="0.1" value="1">
-          <span class="cam-val" id="val-zoom">1x</span>
-        </div>
-        <p class="cam-note">Controles dependem do driver da câmera.<br>A Sony via Imaging Edge pode ter limitações.</p>
+        <p class="cam-note">Brilho, contraste, saturação e zoom funcionam sempre.<br>Foco manual depende do driver da Sony.</p>
         <button class="btn btn-outline btn-sm" id="btn-reset-cam">Resetar</button>
       </div>
     </div>

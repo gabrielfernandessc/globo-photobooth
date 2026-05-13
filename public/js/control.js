@@ -255,11 +255,11 @@
     sendCamControl({ brightness: parseFloat(ctrlBrightness.value) });
   });
   ctrlContrast.addEventListener('input', () => {
-    valContrast.textContent = ctrlContrast.value;
+    valContrast.textContent = ctrlContrast.value + '%';
     sendCamControl({ contrast: parseInt(ctrlContrast.value) });
   });
   ctrlSaturation.addEventListener('input', () => {
-    valSaturation.textContent = ctrlSaturation.value;
+    valSaturation.textContent = ctrlSaturation.value + '%';
     sendCamControl({ saturation: parseInt(ctrlSaturation.value) });
   });
   ctrlFocusMode.addEventListener('change', () => {
@@ -276,12 +276,12 @@
     sendCamControl({ zoom: parseFloat(ctrlZoom.value) });
   });
   btnResetCam.addEventListener('click', () => {
-    ctrlBrightness.value = 0; valBrightness.textContent = '0';
-    ctrlContrast.value = 100; valContrast.textContent = '100';
-    ctrlSaturation.value = 100; valSaturation.textContent = '100';
-    ctrlZoom.value = 1; valZoom.textContent = '1x';
+    ctrlBrightness.value = 0;  valBrightness.textContent = '0';
+    ctrlContrast.value = 100;  valContrast.textContent = '100%';
+    ctrlSaturation.value = 100; valSaturation.textContent = '100%';
+    ctrlZoom.value = 1;        valZoom.textContent = '1x';
     ctrlFocusMode.value = ''; focusDistRow.style.display = 'none';
-    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, zoom: 1, focusMode: '' });
+    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, zoom: 1 });
   });
 
   /* ═══ DISCONNECT ═══ */

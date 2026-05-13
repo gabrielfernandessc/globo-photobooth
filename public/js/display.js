@@ -114,24 +114,20 @@
     }
   }
 
-  /* ── Apply camera controls via ImageCapture ── */
-  async function applyCamControl(cmd) {
-    if (!videoTrack) return;
-    try {
-      const constraints = {};
-      if (cmd.brightness !== undefined) constraints.brightness = cmd.brightness;
-      if (cmd.contrast   !== undefined) constraints.contrast   = cmd.contrast;
-      if (cmd.saturation !== undefined) constraints.saturation = cmd.saturation;
-      if (cmd.zoom       !== undefined) constraints.zoom       = cmd.zoom;
-      if (cmd.focusMode  !== undefined && cmd.focusMode !== '') constraints.focusMode = cmd.focusMode;
-      if (cmd.focusDistance !== undefined) constraints.focusDistance = cmd.focusDistance;
+  /* ── Camera controls via CSS filters (100% confiável) ── */
+  let camFilters = { brightness: 100, contrast: 100, saturation: 100 };
+  let camZoom = 1;
 
-      if (Object.keys(constraints).length > 0) {
-        await videoTrack.applyConstraints({ advanced: [constraints] });
-      }
-    } catch (err) {
-      console.warn('Camera control not supported:', err.message);
-    }
+  function applyCamControl(cmd) {
+    if (cmd.brightness  !== undefined) camFilters.brightness  = Math.round(100 + cmd.brightness * 10);
+    if (cmd.contrast    !== undefined) camFilters.contrast    = cmd.contrast;
+    if (cmd.saturation  !== undefined) camFilters.saturation  = cmd.saturation;
+    if (cmd.zoom        !== undefined) camZoom = cmd.zoom;
+
+    // Apply CSS filter to video preview
+    video.style.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
+    // Apply zoom via transform (keeps it centered)
+    video.style.transform = `scaleX(-1) scale(${camZoom})`;
   }
 
   /* ── Session ── */
@@ -230,9 +226,12 @@
     }
 
     ctx.save();
+    // Apply same CSS filters to canvas capture
+    ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     ctx.translate(res.w, 0); ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, res.w, res.h);
     ctx.restore();
+    ctx.filter = 'none';
 
     if (frameOverlay.classList.contains('loaded') && frameOverlay.naturalWidth > 0) {
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
