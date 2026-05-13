@@ -1,24 +1,25 @@
 /* ══════════════════════════════════════════════════════════
-   DISPLAY.JS — Lógica da tela do totem
-   States: booting → preview (waiting/ready) → countdown → result
+   DISPLAY.JS — Tela do Totem
+   Estados: booting → preview → countdown → result
+   Recebe: cam-control, show-photo via socket
    ══════════════════════════════════════════════════════════ */
 
 (() => {
   'use strict';
 
   /* ── DOM ── */
-  const stateBooting = document.getElementById('state-booting');
-  const statePreview = document.getElementById('state-preview');
-  const stateResult  = document.getElementById('state-result');
-  const stateError   = document.getElementById('state-error');
+  const stateBooting  = document.getElementById('state-booting');
+  const statePreview  = document.getElementById('state-preview');
+  const stateResult   = document.getElementById('state-result');
+  const stateError    = document.getElementById('state-error');
 
   const video         = document.getElementById('camera-feed');
   const frameOverlay  = document.getElementById('frame-overlay');
   const stageCard     = document.getElementById('stage-card');
+  const overlayText   = document.getElementById('overlay-text');
   const countdownOvl  = document.getElementById('countdown-overlay');
   const countdownNum  = document.getElementById('countdown-number');
   const flashOvl      = document.getElementById('flash-overlay');
-  const pillText      = document.getElementById('pill-text');
   const sessionCodeEl = document.getElementById('session-code');
   const statusDot     = document.getElementById('status-dot');
   const statusText    = document.getElementById('status-text');
@@ -29,20 +30,29 @@
   const captureCanvas = document.getElementById('capture-canvas');
 
   /* ── State ── */
-  let sessionCode = null;
-  let stream = null;
+  let sessionCode  = null;
+  let stream       = null;
+  let videoTrack   = null;
+  let imageCapture = null;
   let actualW = 0, actualH = 0;
-  let aspectRatio = '4:5';
-  let capturing = false;
-  let controllerConnected = false;
+  let aspectRatio  = '4:5';
+  let capturing    = false;
   let resultTimeout = null;
+  const RESULT_MS  = 18000;
 
   const RESOLUTIONS = {
     '4:5':  { w: 1080, h: 1350 },
     '16:9': { w: 1920, h: 1080 }
   };
 
-  const RESULT_DISPLAY_MS = 18000;
+  const IDLE_MESSAGES = [
+    '📸 Faça uma pose incrível!',
+    '🤩 Sorria para a câmera!',
+    '😎 Mostre seu melhor lado!',
+    '✌️ Seja você mesmo!',
+    '🎉 Vamos tirar uma foto?',
+  ];
+  let msgIdx = 0;
 
   /* ── Socket ── */
   const socket = io();
@@ -52,35 +62,51 @@
     showState('booting');
     await startCamera();
     createSession();
+    startIdleMessages();
   }
 
   function showState(name) {
-    [stateBooting, statePreview, stateResult, stateError].forEach(el => {
-      el.classList.add('hidden');
-    });
-    const el = {
-      booting: stateBooting,
-      preview: statePreview,
-      result: stateResult,
-      error: stateError
-    }[name];
-    if (el) el.classList.remove('hidden');
+    stateBooting.classList.add('hidden');
+    statePreview.classList.add('hidden');
+    stateResult.classList.add('hidden');
+    stateError.classList.add('hidden');
+    const map = { booting: stateBooting, preview: statePreview, result: stateResult, error: stateError };
+    map[name]?.classList.remove('hidden');
+  }
+
+  /* ── Idle message rotator ── */
+  function startIdleMessages() {
+    setInterval(() => {
+      if (!capturing) {
+        msgIdx = (msgIdx + 1) % IDLE_MESSAGES.length;
+        overlayText.style.opacity = '0';
+        setTimeout(() => {
+          overlayText.textContent = IDLE_MESSAGES[msgIdx];
+          overlayText.style.opacity = '1';
+        }, 300);
+      }
+    }, 4000);
   }
 
   /* ── Camera ── */
   async function startCamera() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 4096 }, height: { ideal: 2160 } },
+        video: { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: 'user' },
         audio: false
       });
       video.srcObject = stream;
       await video.play();
 
-      const track = stream.getVideoTracks()[0];
-      const s = track.getSettings();
-      actualW = s.width;
-      actualH = s.height;
+      videoTrack = stream.getVideoTracks()[0];
+      const s = videoTrack.getSettings();
+      actualW = s.width; actualH = s.height;
+
+      // ImageCapture for camera controls
+      if ('ImageCapture' in window) {
+        imageCapture = new ImageCapture(videoTrack);
+      }
+
       console.log(`Camera: ${actualW}x${actualH}`);
     } catch (err) {
       console.error('Camera error:', err);
@@ -88,44 +114,50 @@
     }
   }
 
+  /* ── Apply camera controls via ImageCapture ── */
+  async function applyCamControl(cmd) {
+    if (!videoTrack) return;
+    try {
+      const constraints = {};
+      if (cmd.brightness !== undefined) constraints.brightness = cmd.brightness;
+      if (cmd.contrast   !== undefined) constraints.contrast   = cmd.contrast;
+      if (cmd.saturation !== undefined) constraints.saturation = cmd.saturation;
+      if (cmd.zoom       !== undefined) constraints.zoom       = cmd.zoom;
+      if (cmd.focusMode  !== undefined && cmd.focusMode !== '') constraints.focusMode = cmd.focusMode;
+      if (cmd.focusDistance !== undefined) constraints.focusDistance = cmd.focusDistance;
+
+      if (Object.keys(constraints).length > 0) {
+        await videoTrack.applyConstraints({ advanced: [constraints] });
+      }
+    } catch (err) {
+      console.warn('Camera control not supported:', err.message);
+    }
+  }
+
   /* ── Session ── */
   function createSession() {
     socket.emit('create-session', ({ code }) => {
       sessionCode = code;
-      sessionCodeEl.textContent = code.slice(0, 3) + ' ' + code.slice(3);
+      sessionCodeEl.textContent = code.slice(0,3) + ' ' + code.slice(3);
       showState('preview');
-      updatePill();
     });
-  }
-
-  /* ── Pill messages based on state ── */
-  function updatePill() {
-    if (controllerConnected) {
-      pillText.textContent = 'Posicione-se e sorria!';
-    } else {
-      pillText.textContent = 'Use o código abaixo para conectar o controle';
-    }
   }
 
   /* ═══ SOCKET EVENTS ═══ */
 
   socket.on('controller-connected', () => {
-    controllerConnected = true;
     statusDot.classList.add('connected');
     statusText.textContent = 'Controle conectado';
-    updatePill();
   });
 
   socket.on('controller-disconnected', () => {
-    controllerConnected = false;
     statusDot.classList.remove('connected');
-    statusText.textContent = 'Controle desconectado';
-    updatePill();
+    statusText.textContent = 'Aguardando controle';
   });
 
-  socket.on('settings-updated', (settings) => {
-    if (settings.aspectRatio && settings.aspectRatio !== aspectRatio) {
-      aspectRatio = settings.aspectRatio;
+  socket.on('settings-updated', (s) => {
+    if (s.aspectRatio && s.aspectRatio !== aspectRatio) {
+      aspectRatio = s.aspectRatio;
       stageCard.dataset.ratio = aspectRatio;
       loadFrame();
     }
@@ -142,11 +174,19 @@
     if (!capturing) startCountdown(timer);
   });
 
+  socket.on('cam-control', ({ cmd }) => {
+    applyCamControl(cmd);
+  });
+
+  socket.on('show-photo', ({ url }) => {
+    if (url) showResult(url, false);
+  });
+
   /* ═══ CAPTURE FLOW ═══ */
 
   async function startCountdown(seconds) {
     capturing = true;
-    pillText.textContent = 'Prepare seu melhor sorriso!';
+    overlayText.style.opacity = '0';
     countdownOvl.classList.remove('hidden');
 
     for (let i = seconds; i > 0; i--) {
@@ -160,6 +200,8 @@
     countdownOvl.classList.add('hidden');
     await doCapture();
     capturing = false;
+    overlayText.style.opacity = '1';
+    overlayText.textContent = IDLE_MESSAGES[msgIdx];
   }
 
   async function doCapture() {
@@ -177,38 +219,29 @@
     const ctx = captureCanvas.getContext('2d');
 
     const targetAspect = res.w / res.h;
-    const videoAspect = actualW / actualH;
+    const videoAspect  = actualW / actualH;
     let sx, sy, sw, sh;
-
     if (videoAspect > targetAspect) {
-      sh = actualH;
-      sw = actualH * targetAspect;
-      sx = (actualW - sw) / 2;
-      sy = 0;
+      sh = actualH; sw = actualH * targetAspect;
+      sx = (actualW - sw) / 2; sy = 0;
     } else {
-      sw = actualW;
-      sh = actualW / targetAspect;
-      sx = 0;
-      sy = (actualH - sh) / 2;
+      sw = actualW; sh = actualW / targetAspect;
+      sx = 0; sy = (actualH - sh) / 2;
     }
 
-    // Mirror + draw
     ctx.save();
-    ctx.translate(res.w, 0);
-    ctx.scale(-1, 1);
+    ctx.translate(res.w, 0); ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, res.w, res.h);
     ctx.restore();
 
-    // Frame overlay
     if (frameOverlay.classList.contains('loaded') && frameOverlay.naturalWidth > 0) {
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
     }
 
-    // Export & upload
     const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.92);
-    const base64 = dataUrl.split(',')[1];
+    const base64  = dataUrl.split(',')[1];
 
-    showResult(dataUrl);
+    showResult(dataUrl, true);
 
     try {
       const resp = await fetch('/api/upload', {
@@ -222,8 +255,7 @@
         const photoUrl = data.data.url;
         generateQR(photoUrl);
         socket.emit('photo-uploaded', {
-          code: sessionCode,
-          url: photoUrl,
+          code: sessionCode, url: photoUrl,
           thumbnail: data.data.thumb?.url || photoUrl
         });
       } else {
@@ -237,46 +269,40 @@
 
   /* ═══ RESULT ═══ */
 
-  function showResult(imgSrc) {
+  function showResult(imgSrc, startTimer = true) {
     resultPhoto.src = imgSrc;
     showState('result');
 
     if (resultTimeout) clearTimeout(resultTimeout);
-    resetBar.style.transition = 'none';
-    resetBar.style.width = '100%';
-    void resetBar.offsetWidth;
-    resetBar.style.transition = `width ${RESULT_DISPLAY_MS}ms linear`;
-    resetBar.style.width = '0%';
 
-    resultTimeout = setTimeout(resetToPreview, RESULT_DISPLAY_MS);
+    if (startTimer) {
+      resetBar.style.transition = 'none';
+      resetBar.style.width = '100%';
+      void resetBar.offsetWidth;
+      resetBar.style.transition = `width ${RESULT_MS}ms linear`;
+      resetBar.style.width = '0%';
+      resultTimeout = setTimeout(resetToPreview, RESULT_MS);
+    }
   }
 
   function generateQR(url) {
     if (typeof QRCode === 'undefined') return;
     QRCode.toCanvas(qrCanvas, url, {
-      width: 200,
-      margin: 2,
+      width: 180, margin: 2,
       color: { dark: '#003B71', light: '#FFFFFF' }
-    }, (err) => {
-      if (err) console.error('QR error:', err);
-    });
+    }, err => { if (err) console.error('QR error:', err); });
   }
 
   function showQRError() {
     const ctx = qrCanvas.getContext('2d');
-    qrCanvas.width = 200;
-    qrCanvas.height = 200;
-    ctx.fillStyle = '#F2F2F2';
-    ctx.fillRect(0, 0, 200, 200);
-    ctx.fillStyle = '#FF0C1F';
-    ctx.font = '500 14px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Erro no upload', 100, 100);
+    qrCanvas.width = 180; qrCanvas.height = 180;
+    ctx.fillStyle = '#F2F2F2'; ctx.fillRect(0, 0, 180, 180);
+    ctx.fillStyle = '#FF0C1F'; ctx.font = '13px Inter, sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText('Erro no upload', 90, 90);
   }
 
   function resetToPreview() {
     showState('preview');
-    updatePill();
     if (resultTimeout) { clearTimeout(resultTimeout); resultTimeout = null; }
   }
 
@@ -286,16 +312,12 @@
 
   /* ── Frame loader ── */
   function loadFrame() {
+    if (!sessionCode) return;
     const url = `/api/frame/${sessionCode}?ratio=${aspectRatio}&t=${Date.now()}`;
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      frameOverlay.src = url;
-      frameOverlay.classList.add('loaded');
-    };
-    img.onerror = () => {
-      frameOverlay.classList.remove('loaded');
-    };
+    img.onload = () => { frameOverlay.src = url; frameOverlay.classList.add('loaded'); };
+    img.onerror = () => frameOverlay.classList.remove('loaded');
     img.src = url;
   }
 

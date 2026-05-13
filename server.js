@@ -116,6 +116,10 @@ io.on('connection', (socket) => {
       hasFrame16x9: !!s.frame16x9,
       photoCount: (s.photos || []).length
     });
+    // Send existing photos to the joining controller
+    if (s.photos && s.photos.length > 0) {
+      socket.emit('session-photos', { photos: s.photos });
+    }
     console.log('Controller joined:', code);
   });
 
@@ -138,6 +142,18 @@ io.on('connection', (socket) => {
       Object.assign(s.settings, settings);
       io.to(code).emit('settings-updated', s.settings);
     }
+  });
+
+  // Re-show a photo on the display (from gallery tap)
+  socket.on('show-photo', ({ code, url }) => {
+    const s = sessions.get(code);
+    if (s) io.to(s.displaySocket).emit('show-photo', { url });
+  });
+
+  // Camera control relay: control → display
+  socket.on('cam-control', ({ code, cmd }) => {
+    const s = sessions.get(code);
+    if (s) io.to(s.displaySocket).emit('cam-control', { cmd });
   });
 
   socket.on('disconnect', () => {

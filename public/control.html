@@ -2,99 +2,136 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Globo Photo Booth — Controle</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Controle — Globo Photo Booth</title>
   <link rel="stylesheet" href="/css/design-system.css">
   <link rel="stylesheet" href="/css/control.css">
 </head>
 <body>
-  <div class="control-page" id="app">
+  <!-- ═══ PAIRING ═══ -->
+  <div class="ctrl-page" id="pairing-screen">
+    <div class="pair-header">
+      <span class="pair-logo">Globo Photo Booth</span>
+      <span class="pair-sub">Controle remoto</span>
+    </div>
+    <p class="pair-title">Digite o código do totem</p>
+    <div class="code-inputs" id="code-inputs">
+      <input type="number" maxlength="1" inputmode="numeric" id="d0">
+      <input type="number" maxlength="1" inputmode="numeric" id="d1">
+      <input type="number" maxlength="1" inputmode="numeric" id="d2">
+      <input type="number" maxlength="1" inputmode="numeric" id="d3">
+      <input type="number" maxlength="1" inputmode="numeric" id="d4">
+      <input type="number" maxlength="1" inputmode="numeric" id="d5">
+    </div>
+    <p class="pair-error hidden" id="pair-error">Código inválido. Tente novamente.</p>
+    <button class="btn btn-primary" id="btn-connect" disabled>Conectar</button>
+  </div>
+
+  <!-- ═══ CONTROL ═══ -->
+  <div class="ctrl-page hidden" id="control-screen">
 
     <!-- Header -->
     <div class="ctrl-header">
-      <div class="logo">Photo Booth</div>
-      <div class="subtitle">Controle remoto</div>
+      <div class="ctrl-status" id="ctrl-status">
+        <span class="status-dot" id="ctrl-dot"></span>
+        <span id="ctrl-status-text">Conectado</span>
+      </div>
+      <span class="ctrl-logo">Photo Booth</span>
+      <span class="ctrl-count" id="ctrl-count">0 fotos</span>
     </div>
 
-    <!-- ═══ Pairing Screen ═══ -->
-    <div class="pairing-screen" id="pairing-screen">
-      <p class="pairing-title">Digite o código exibido na tela do totem</p>
-
-      <div class="code-inputs" id="code-inputs">
-        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="0">
-        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="1">
-        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="2">
-        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="3">
-        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="4">
-        <input type="tel" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off" data-idx="5">
-      </div>
-
-      <p class="pairing-error" id="pairing-error"></p>
-
-      <button class="btn btn-primary btn-lg" id="btn-connect" disabled>Conectar</button>
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab active" data-tab="shoot" id="tab-shoot">📷 Foto</button>
+      <button class="tab" data-tab="gallery" id="tab-gallery">🖼 Galeria</button>
+      <button class="tab" data-tab="camera" id="tab-camera">🎛 Câmera</button>
     </div>
 
-    <!-- ═══ Control Screen ═══ -->
-    <div class="control-screen hidden" id="control-screen">
-
-      <!-- Status -->
-      <div class="connection-status online" id="conn-status">
-        <span class="dot"></span>
-        <span id="conn-text">Conectado</span>
+    <!-- ── TAB: Shoot ── -->
+    <div class="tab-panel active" id="panel-shoot">
+      <!-- Capture button -->
+      <div class="capture-row">
+        <button class="capture-btn" id="capture-btn" disabled></button>
       </div>
 
-      <!-- Capture -->
-      <div class="capture-section">
-        <button class="capture-btn" id="btn-capture" aria-label="Capturar foto">
-        </button>
-        <p class="capture-hint" id="capture-hint">Toque para capturar</p>
-      </div>
-
-      <!-- Photo counter -->
-      <div class="photo-counter">
-        Fotos: <span id="photo-count">0</span>
-      </div>
-
-      <!-- Settings -->
-      <div class="settings-panel">
-        <!-- Timer -->
-        <div class="setting-group">
-          <div class="setting-label">Contagem regressiva</div>
-          <div class="timer-options" id="timer-options">
-            <button class="pill active" data-timer="3">3s</button>
-            <button class="pill" data-timer="5">5s</button>
-            <button class="pill" data-timer="10">10s</button>
-          </div>
-        </div>
-
-        <!-- Aspect Ratio -->
-        <div class="setting-group">
-          <div class="setting-label">Proporção</div>
-          <div class="ratio-options" id="ratio-options">
-            <button class="pill active" data-ratio="4:5">4:5 Instagram</button>
-            <button class="pill" data-ratio="16:9">16:9 Widescreen</button>
-          </div>
-        </div>
-
-        <!-- Frame Upload -->
-        <div class="setting-group">
-          <div class="setting-label">Moldura (frame PNG)</div>
-          <div class="frame-upload-row">
-            <button class="frame-upload-btn" id="btn-frame-4x5" data-ratio="4:5">
-              Enviar frame 4:5
-            </button>
-            <button class="frame-upload-btn" id="btn-frame-16x9" data-ratio="16:9">
-              Enviar frame 16:9
-            </button>
-          </div>
-          <input type="file" id="frame-input" accept="image/png" style="display:none">
+      <!-- Timer pills -->
+      <div class="setting-block">
+        <span class="setting-label">Timer</span>
+        <div class="pills">
+          <button class="pill active" data-timer="3" id="t3">3s</button>
+          <button class="pill" data-timer="5" id="t5">5s</button>
+          <button class="pill" data-timer="10" id="t10">10s</button>
         </div>
       </div>
 
-      <!-- Last Photo -->
-      <div class="last-photo-section hidden" id="last-photo-section">
-        <div class="setting-label">Última foto</div>
-        <img id="last-photo-img" alt="Última foto capturada" />
+      <!-- Ratio pills -->
+      <div class="setting-block">
+        <span class="setting-label">Proporção</span>
+        <div class="pills">
+          <button class="pill active" data-ratio="4:5" id="r45">4:5</button>
+          <button class="pill" data-ratio="16:9" id="r169">16:9</button>
+        </div>
+      </div>
+
+      <!-- Frame upload -->
+      <div class="setting-block">
+        <span class="setting-label">Moldura (PNG)</span>
+        <div class="pills">
+          <button class="pill frame-btn" id="btn-frame-4x5" data-ratio="4:5">Enviar 4:5</button>
+          <button class="pill frame-btn" id="btn-frame-16x9" data-ratio="16:9">Enviar 16:9</button>
+        </div>
+        <input type="file" id="frame-input" accept="image/png" style="display:none">
+      </div>
+    </div>
+
+    <!-- ── TAB: Gallery ── -->
+    <div class="tab-panel hidden" id="panel-gallery">
+      <p class="gallery-hint">Toque em uma foto para exibi-la no totem novamente.</p>
+      <div class="gallery-grid" id="gallery-grid">
+        <p class="no-photos" id="no-photos">Ainda sem fotos nesta sessão.</p>
+      </div>
+    </div>
+
+    <!-- ── TAB: Camera ── -->
+    <div class="tab-panel hidden" id="panel-camera">
+      <p class="camera-hint">Controles da câmera via API do navegador.</p>
+
+      <div class="cam-control">
+        <div class="cam-ctrl-row">
+          <span class="cam-label">Brilho</span>
+          <input type="range" id="ctrl-brightness" min="-5" max="5" step="0.5" value="0">
+          <span class="cam-val" id="val-brightness">0</span>
+        </div>
+        <div class="cam-ctrl-row">
+          <span class="cam-label">Contraste</span>
+          <input type="range" id="ctrl-contrast" min="0" max="200" step="5" value="100">
+          <span class="cam-val" id="val-contrast">100</span>
+        </div>
+        <div class="cam-ctrl-row">
+          <span class="cam-label">Saturação</span>
+          <input type="range" id="ctrl-saturation" min="0" max="200" step="5" value="100">
+          <span class="cam-val" id="val-saturation">100</span>
+        </div>
+        <div class="cam-ctrl-row">
+          <span class="cam-label">Foco</span>
+          <select id="ctrl-focus-mode">
+            <option value="">Padrão</option>
+            <option value="continuous">Contínuo</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+        <div class="cam-ctrl-row" id="focus-distance-row" style="display:none">
+          <span class="cam-label">Distância foco</span>
+          <input type="range" id="ctrl-focus-distance" min="0" max="100" step="1" value="50">
+          <span class="cam-val" id="val-focus">50</span>
+        </div>
+        <div class="cam-ctrl-row">
+          <span class="cam-label">Zoom</span>
+          <input type="range" id="ctrl-zoom" min="1" max="5" step="0.1" value="1">
+          <span class="cam-val" id="val-zoom">1x</span>
+        </div>
+        <p class="cam-note">Controles dependem do driver da câmera.<br>A Sony via Imaging Edge pode ter limitações.</p>
+        <button class="btn btn-outline btn-sm" id="btn-reset-cam">Resetar</button>
       </div>
     </div>
 

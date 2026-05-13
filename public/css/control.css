@@ -1,144 +1,149 @@
 /* ══════════════════════════════════════════════════════════
-   CONTROL PAGE — Controle Remoto (mobile-first)
-   Fundo claro · Azul como acento · Tipografia controlada
+   CONTROL PAGE — Compacto, cabe na tela, 3 tabs
    ══════════════════════════════════════════════════════════ */
 
 html, body {
-  height: 100%;
+  height: 100%; width: 100%;
   background: var(--branco);
   color: var(--preto);
+  overflow: hidden;
 }
 
-.control-page {
-  min-height: 100vh;
-  min-height: 100dvh;
+/* ── Both pages fill screen ── */
+.ctrl-page {
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   max-width: 420px;
   margin: 0 auto;
-  padding: var(--s24);
-  padding-top: var(--s32);
+  overflow: hidden;
 }
 
-/* ── Header ── */
-.ctrl-header {
-  text-align: center;
-  margin-bottom: var(--s32);
-  padding-bottom: var(--s16);
-  border-bottom: 1px solid var(--preto-5);
-}
-.ctrl-header .logo {
-  font-size: var(--body);
-  font-weight: 700;
-  color: var(--azul);
-}
-.ctrl-header .subtitle {
-  font-size: var(--label);
-  color: var(--preto-50);
-  margin-top: 2px;
-}
-
-/* ── Pairing Screen ── */
-.pairing-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+/* ════════════════════════════════
+   PAIRING SCREEN
+   ════════════════════════════════ */
+#pairing-screen {
   align-items: center;
   justify-content: center;
-  gap: var(--s32);
-  animation: fadeIn .3s ease;
+  gap: var(--s16);
+  padding: var(--s24);
+  background: var(--branco);
 }
-
-.pairing-title {
-  font-size: var(--body);
-  font-weight: 500;
-  text-align: center;
-  color: var(--preto);
-}
+.pair-header { text-align: center; margin-bottom: var(--s8); }
+.pair-logo { font-size: var(--body); font-weight: 700; color: var(--azul); }
+.pair-sub { font-size: var(--label); color: var(--preto-50); display: block; }
+.pair-title { font-size: var(--label); color: var(--preto); font-weight: 500; }
 
 .code-inputs {
   display: flex;
-  gap: var(--s8);
+  gap: 6px;
 }
-
 .code-inputs input {
-  width: 46px;
-  height: 56px;
+  width: 42px; height: 52px;
   text-align: center;
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 22px; font-weight: 700;
   font-family: var(--font);
   background: var(--preto-5);
   border: 1.5px solid var(--preto-25);
   border-radius: var(--radius-sm);
   color: var(--preto);
   outline: none;
-  transition: all .2s;
+  transition: all .15s;
   -webkit-appearance: none;
+  -moz-appearance: textfield;
 }
+.code-inputs input::-webkit-outer-spin-button,
+.code-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; }
 .code-inputs input:focus {
   border-color: var(--azul);
   background: var(--branco);
   box-shadow: 0 0 0 3px rgba(5,166,255,.12);
 }
-.code-inputs input.filled {
-  border-color: var(--azul);
-  background: var(--branco);
-}
+.code-inputs input.filled { border-color: var(--azul); }
+.pair-error { color: var(--vermelho); font-size: 13px; min-height: 18px; }
+#pairing-screen .btn { width: 100%; max-width: 240px; }
 
-.pairing-error {
-  color: var(--vermelho);
-  font-size: var(--label);
-  min-height: 20px;
-}
+/* ════════════════════════════════
+   CONTROL SCREEN
+   ════════════════════════════════ */
 
-/* ── Control Screen ── */
-.control-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s24);
-  animation: fadeIn .3s ease;
-}
-
-/* Connection status */
-.connection-status {
+/* ── Header ── */
+.ctrl-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px var(--s16);
-  border-radius: 100px;
-  font-size: var(--label);
-  font-weight: 500;
-  align-self: center;
+  justify-content: space-between;
+  padding: 10px var(--s16);
+  border-bottom: 1px solid var(--preto-5);
+  flex-shrink: 0;
 }
-.connection-status.online {
-  background: rgba(0,200,83,.08);
-  color: #00894A;
+.ctrl-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--preto-50);
 }
-.connection-status.offline {
-  background: rgba(255,12,31,.08);
-  color: var(--vermelho);
-}
-.connection-status .dot {
-  width: 6px; height: 6px;
+.ctrl-status .status-dot {
+  width: 7px; height: 7px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--preto-25);
+  transition: all .3s;
+}
+.ctrl-status .status-dot.connected {
+  background: #00A86B;
+  box-shadow: 0 0 5px rgba(0,168,107,.4);
+}
+.ctrl-logo { font-size: var(--label); font-weight: 700; color: var(--azul); }
+.ctrl-count { font-size: 12px; color: var(--preto-50); }
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--preto-5);
+  flex-shrink: 0;
+}
+.tab {
+  flex: 1;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--preto-50);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+}
+.tab.active {
+  color: var(--azul);
+  border-bottom-color: var(--azul);
 }
 
-/* ── Capture Button ── */
-.capture-section {
+/* ── Tab panels ── */
+.tab-panel {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s16);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--s16);
-  padding: var(--s16) 0;
+  gap: var(--s12, 12px);
+}
+
+/* ════════════════════════════════
+   SHOOT TAB
+   ════════════════════════════════ */
+
+/* Capture button row */
+.capture-row {
+  display: flex;
+  justify-content: center;
+  padding: var(--s8) 0 var(--s4);
 }
 
 .capture-btn {
-  width: 100px;
-  height: 100px;
+  width: 72px; height: 72px;
   border-radius: 50%;
   border: 4px solid var(--azul);
   background: transparent;
@@ -155,130 +160,133 @@ html, body {
   background: var(--azul);
   transition: all .15s ease;
 }
-.capture-btn:active {
-  transform: scale(.92);
-}
-.capture-btn:active::after {
-  background: var(--azul-profundo);
-}
-.capture-btn:disabled {
-  border-color: var(--preto-25);
-  cursor: not-allowed;
-}
-.capture-btn:disabled::after {
-  background: var(--preto-25);
-}
-.capture-btn:disabled:active { transform: none; }
+.capture-btn:active { transform: scale(.9); }
+.capture-btn:disabled { border-color: var(--preto-25); cursor: not-allowed; }
+.capture-btn:disabled::after { background: var(--preto-25); }
+.capture-btn.capturing { border-color: var(--vermelho); }
+.capture-btn.capturing::after { background: var(--vermelho); animation: pulse .8s ease infinite; }
 
-.capture-btn.capturing {
-  border-color: var(--vermelho);
-}
-.capture-btn.capturing::after {
-  background: var(--vermelho);
-  animation: pulse .8s ease infinite;
-}
-
-.capture-hint {
-  font-size: var(--label);
-  color: var(--preto-50);
-}
-
-/* ── Settings Panel ── */
-.settings-panel {
+/* Setting blocks */
+.setting-block {
   display: flex;
   flex-direction: column;
-  gap: var(--s16);
+  gap: 6px;
 }
-
-.setting-group {
-  padding: var(--s16);
-  background: var(--preto-5);
-  border-radius: var(--radius);
-}
-
 .setting-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--preto-50);
   text-transform: uppercase;
   letter-spacing: .8px;
-  margin-bottom: var(--s8);
-  font-weight: 500;
+  font-weight: 600;
 }
-
-/* Pills */
-.timer-options, .ratio-options {
-  display: flex;
-  gap: var(--s8);
-}
-
+.pills { display: flex; gap: 6px; }
 .pill {
   flex: 1;
-  padding: var(--s8) var(--s16);
+  padding: 8px 0;
   border-radius: var(--radius);
   border: 1.5px solid var(--preto-25);
   background: var(--branco);
   color: var(--preto-50);
   font-family: var(--font);
-  font-size: var(--label);
-  font-weight: 500;
+  font-size: 13px; font-weight: 500;
   cursor: pointer;
-  transition: all .2s;
+  transition: all .15s;
   text-align: center;
 }
 .pill:hover { border-color: var(--azul); color: var(--preto); }
-.pill.active {
-  background: var(--azul);
-  border-color: var(--azul);
-  color: var(--branco);
-}
+.pill.active { background: var(--azul); border-color: var(--azul); color: var(--branco); }
+.pill.has-frame { border-color: #00A86B; border-style: solid; color: #00A86B; background: rgba(0,168,107,.05); }
 
-/* Frame upload */
-.frame-upload-row {
-  display: flex;
-  gap: var(--s8);
-}
+/* ════════════════════════════════
+   GALLERY TAB
+   ════════════════════════════════ */
 
-.frame-upload-btn {
-  flex: 1;
-  padding: var(--s8) var(--s16);
-  border-radius: var(--radius-sm);
-  border: 1.5px dashed var(--preto-25);
-  background: var(--branco);
+.gallery-hint {
+  font-size: 12px;
   color: var(--preto-50);
+  text-align: center;
+  margin-bottom: var(--s8);
+}
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.no-photos {
+  grid-column: 1/-1;
+  text-align: center;
+  font-size: 13px;
+  color: var(--preto-25);
+  padding: var(--s32) 0;
+}
+.gallery-thumb {
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color .15s;
+}
+.gallery-thumb:active { border-color: var(--azul); }
+.gallery-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ════════════════════════════════
+   CAMERA TAB
+   ════════════════════════════════ */
+
+.camera-hint {
+  font-size: 12px;
+  color: var(--preto-50);
+  text-align: center;
+}
+.cam-control {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cam-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cam-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--preto);
+  width: 90px;
+  flex-shrink: 0;
+}
+.cam-ctrl-row input[type=range] {
+  flex: 1;
+  accent-color: var(--azul);
+  height: 4px;
+}
+.cam-ctrl-row select {
+  flex: 1;
   font-family: var(--font);
   font-size: 13px;
-  cursor: pointer;
-  transition: all .2s;
-  text-align: center;
-}
-.frame-upload-btn:hover { border-color: var(--azul); color: var(--azul); }
-.frame-upload-btn.has-frame {
-  border-color: #00894A;
-  border-style: solid;
-  color: #00894A;
-  background: rgba(0,137,74,.04);
-}
-
-/* ── Last Photo ── */
-.last-photo-section {
-  text-align: center;
-}
-.last-photo-section img {
-  width: 100%;
-  max-height: 180px;
-  object-fit: contain;
+  border: 1px solid var(--preto-25);
   border-radius: var(--radius-sm);
-  margin-top: var(--s8);
-  border: 1px solid var(--preto-5);
-}
-
-/* ── Photo counter ── */
-.photo-counter {
-  text-align: center;
-  font-size: var(--label);
-  font-weight: 600;
+  padding: 4px 8px;
   color: var(--preto);
+  outline: none;
+  background: var(--branco);
 }
-.photo-counter span {
+.cam-val {
+  font-size: 12px;
   color: var(--azul);
+  font-weight: 600;
+  min-width: 36px;
+  text-align: right;
+}
+.cam-note {
+  font-size: 11px;
+  color: var(--preto-25);
+  text-align: center;
+  line-height: 1.5;
+  margin-top: 4px;
 }
