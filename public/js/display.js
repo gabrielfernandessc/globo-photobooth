@@ -1,56 +1,60 @@
 /* ══════════════════════════════════════════════════════════
-   DISPLAY.JS — Tela do Totem
-   Modo automático: detecta gphoto2 → Sony A7III full-res
-   Fallback: getUserMedia (webcam/Imaging Edge) máxima qualidade
+   DISPLAY.JS — Globo Photo Booth Totem
+   Estrutura de captura idêntica ao fotototem-ref/CameraFeed.tsx
+   QR via api.qrserver.com (sem biblioteca, como react-qr-code mas mais simples)
    ══════════════════════════════════════════════════════════ */
 
 (() => {
   'use strict';
 
   /* ── DOM ── */
-  const stateBooting  = document.getElementById('state-booting');
-  const statePreview  = document.getElementById('state-preview');
-  const stateResult   = document.getElementById('state-result');
-  const stateError    = document.getElementById('state-error');
-  const bootingMsg    = document.getElementById('booting-msg');
-  const bootingSub    = document.getElementById('booting-sub');
+  const $ = id => document.getElementById(id);
+  const stateBooting  = $('state-booting');
+  const statePreview  = $('state-preview');
+  const stateResult   = $('state-result');
+  const stateError    = $('state-error');
+  const bootingMsg    = $('booting-msg');
+  const bootingSub    = $('booting-sub');
 
-  const video         = document.getElementById('camera-feed');
-  const gphotoFeed    = document.getElementById('gphoto-feed');
-  const frameOverlay  = document.getElementById('frame-overlay');
-  const modeBadge     = document.getElementById('mode-badge');
-  const modeLabel     = document.getElementById('mode-label');
-  const stageCard     = document.getElementById('stage-card');
-  const overlayText   = document.getElementById('overlay-text');
-  const countdownOvl  = document.getElementById('countdown-overlay');
-  const countdownNum  = document.getElementById('countdown-number');
-  const flashOvl      = document.getElementById('flash-overlay');
-  const sessionCodeEl = document.getElementById('session-code');
-  const statusDot     = document.getElementById('status-dot');
-  const resultPhoto   = document.getElementById('result-photo');
-  const qrImg         = document.getElementById('qr-img');
-  const qrLoading     = document.getElementById('qr-loading');
-  const photoCountEl  = document.getElementById('photo-count');
-  const resetBar      = document.getElementById('reset-bar');
-  const captureCanvas = document.getElementById('capture-canvas');
+  const video         = $('camera-feed');
+  const gphotoFeed    = $('gphoto-feed');
+  const frameOverlay  = $('frame-overlay');
+  const modeBadge     = $('mode-badge');
+  const modeLabel     = $('mode-label');
+  const stageCard     = $('stage-card');
+  const overlayText   = $('overlay-text');
+  const countdownOvl  = $('countdown-overlay');
+  const countdownNum  = $('countdown-number');
+  const flashOvl      = $('flash-overlay');
+  const sessionCodeEl = $('session-code');
+  const statusDot     = $('status-dot');
+  const resultPhoto   = $('result-photo');
+  const qrImg         = $('qr-img');
+  const qrLoader      = $('qr-loader');
+  const qrBody        = $('qr-body');
+  const photoCountEl  = $('photo-count');
+  const resetBar      = $('reset-bar');
+  const captureCanvas = $('capture-canvas');
+  const btnDownload   = $('btn-download');
 
   /* ── State ── */
-  let sessionCode  = null;
-  let stream       = null;
-  let useGphoto    = false;
-  let aspectRatio  = '4:5';
-  let capturing    = false;
+  let sessionCode   = null;
+  let stream        = null;
+  let useGphoto     = false;
+  let aspectRatio   = '4:5';
+  let capturing     = false;
   let resultTimeout = null;
+  let lastDataUrl   = null; // for download button
 
-  const RESULT_MS  = 18000;
+  const RESULT_MS = 18000;
 
-  /* Portrait = 1080×1920 (9:16 like fotototem-ref), Landscape = 1440×1080 */
+  /* Resoluções de captura — idênticas ao fotototem-ref/CameraFeed.tsx */
   const RESOLUTIONS = {
-    '4:5':  { w: 1080, h: 1920 },
-    '16:9': { w: 1440, h: 1080 }
+    '4:5':  { w: 1080, h: 1920 }, // portrait 9:16
+    '16:9': { w: 1440, h: 1080 }, // landscape
   };
 
-  const IDLE_MESSAGES = [
+  const IDLE_MSGS = [
     '📸 Faça uma pose incrível!',
     '🤩 Sorria para a câmera!',
     '😎 Mostre seu melhor lado!',
@@ -59,11 +63,9 @@
   ];
   let msgIdx = 0;
 
-  /* ── CSS filter state ── */
   let camFilters = { brightness: 100, contrast: 100, saturation: 100 };
   let camZoom = 1;
 
-  /* ── Socket ── */
   const socket = io();
 
   /* ═══ INIT ═══ */
@@ -74,13 +76,13 @@
 
     try {
       const r = await fetch('/api/gphoto/status');
-      const data = await r.json();
-      if (data.available) {
+      const d = await r.json();
+      if (d.available) {
         useGphoto = true;
         bootingMsg.textContent = 'Sony detectada!';
-        bootingSub.textContent  = data.camera;
+        bootingSub.textContent  = d.camera;
         await sleep(800);
-        startGphotoMode(data.camera);
+        startGphotoMode(d.camera);
       } else {
         await startWebcamMode();
       }
@@ -92,80 +94,99 @@
     startIdleMessages();
   }
 
+  /* ── State switcher ── */
   function showState(name) {
     [stateBooting, statePreview, stateResult, stateError].forEach(el => el.classList.add('hidden'));
-    ({ booting: stateBooting, preview: statePreview, result: stateResult, error: stateError })[name]
+    ({ booting: stateBooting, preview: statePreview, result: stateResult, error: stateError }[name])
       ?.classList.remove('hidden');
   }
 
   /* ═══ GPHOTO2 MODE ═══ */
-  function startGphotoMode(cameraName) {
+  function startGphotoMode(cam) {
     gphotoFeed.classList.remove('hidden');
     video.classList.add('hidden');
     gphotoFeed.src = '/api/gphoto/preview';
-    gphotoFeed.style.transform = 'scaleX(-1)';
     modeBadge.classList.remove('hidden');
-    modeLabel.textContent = cameraName.split(' ').slice(0, 3).join(' ');
+    modeLabel.textContent = cam.split(' ').slice(0, 3).join(' ');
     showState('preview');
   }
 
-  /* ═══ WEBCAM MODE — request highest possible resolution ═══ */
+  /* ═══ WEBCAM MODE — tenta 4K → FHD → HD ═══ */
   async function startWebcamMode() {
     bootingMsg.textContent = 'Abrindo câmera…';
-
-    // Try resolutions from highest to lowest
-    const constraints = [
-      { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } }, // 4K
-      { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, // FHD
-      { width: { ideal: 1280 }, height: { ideal:  720 }                             }, // HD
+    const attempts = [
+      { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } },
+      { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      { width: { ideal: 1280 }, height: { ideal:  720 } },
     ];
-
-    for (const video_c of constraints) {
+    for (const vc of attempts) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio: false });
         video.srcObject = stream;
         await video.play();
         showState('preview');
         return;
       } catch { /* try next */ }
     }
-
     showState('error');
   }
 
-  /* ── Idle message rotator ── */
+  /* ── Idle messages ── */
   function startIdleMessages() {
     setInterval(() => {
-      if (!capturing) {
-        msgIdx = (msgIdx + 1) % IDLE_MESSAGES.length;
-        overlayText.style.opacity = '0';
-        setTimeout(() => {
-          overlayText.textContent = IDLE_MESSAGES[msgIdx];
-          overlayText.style.opacity = '1';
-        }, 300);
-      }
+      if (capturing) return;
+      msgIdx = (msgIdx + 1) % IDLE_MSGS.length;
+      overlayText.style.opacity = '0';
+      setTimeout(() => {
+        overlayText.textContent = IDLE_MSGS[msgIdx];
+        overlayText.style.opacity = '1';
+      }, 300);
     }, 4000);
   }
 
-  /* ── CSS Camera controls ── */
+  /* ── CSS filters (webcam quality fallback) ── */
   function applyCamControl(cmd) {
     if (cmd.brightness !== undefined) camFilters.brightness = Math.round(100 + cmd.brightness * 10);
     if (cmd.contrast   !== undefined) camFilters.contrast   = cmd.contrast;
     if (cmd.saturation !== undefined) camFilters.saturation = cmd.saturation;
     if (cmd.zoom       !== undefined) camZoom = cmd.zoom;
-
-    const filterStr = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
-    video.style.filter  = filterStr;
-    video.style.transform = `scaleX(-1) scale(${camZoom})`;
-    gphotoFeed.style.filter = filterStr;
+    const f = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
+    video.style.filter      = f;
+    video.style.transform   = `scaleX(-1) scale(${camZoom})`;
+    gphotoFeed.style.filter = f;
     gphotoFeed.style.transform = `scaleX(-1) scale(${camZoom})`;
+  }
+
+  /* ─────────────────────────────────────────
+     QR CODE — sem biblioteca JS.
+     api.qrserver.com gera PNG/SVG on-demand
+     via parâmetro GET — 100% confiável,
+     mesmo resultado que react-qr-code do ref.
+     ───────────────────────────────────────── */
+  function generateQR(url) {
+    // Build QR image URL — same as react-qr-code but via free API
+    const encoded = encodeURIComponent(url);
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=003B71&bgcolor=FFFFFF&data=${encoded}&margin=10&ecc=L`;
+
+    qrLoader.style.display = 'flex';
+    qrImg.style.display    = 'none';
+
+    qrImg.onload = () => {
+      qrLoader.style.display = 'none';
+      qrImg.style.display    = 'block';
+      qrBody.textContent = 'Aponte a câmera do celular para abrir a foto.';
+    };
+    qrImg.onerror = () => {
+      qrLoader.innerHTML = '<p style="font-size:12px;color:#c00;text-align:center">Sem acesso à internet para gerar QR</p>';
+    };
+    qrImg.src = qrUrl;
   }
 
   /* ── Session ── */
   function createSession() {
     socket.emit('create-session', ({ code }) => {
       sessionCode = code;
-      sessionCodeEl.textContent = code; // 4-char alphanum
+      sessionCodeEl.textContent = code;
     });
   }
 
@@ -173,39 +194,30 @@
 
   socket.on('controller-connected', () => {
     statusDot.classList.add('connected');
-    document.getElementById('status-text').textContent = '✓ Controle conectado';
+    $('status-text').textContent = '✓ Controle conectado';
   });
-
   socket.on('controller-disconnected', () => {
     statusDot.classList.remove('connected');
-    document.getElementById('status-text').textContent = 'Aguardando controle…';
+    $('status-text').textContent = 'Aguardando controle…';
   });
-
-  socket.on('settings-updated', (s) => {
+  socket.on('settings-updated', s => {
     if (s.aspectRatio && s.aspectRatio !== aspectRatio) {
       aspectRatio = s.aspectRatio;
       stageCard.dataset.ratio = aspectRatio;
       loadFrame();
     }
   });
-
   socket.on('frame-updated', ({ aspectRatio: ratio, frameUrl }) => {
     if (ratio === aspectRatio) {
       frameOverlay.src = frameUrl;
       frameOverlay.onload = () => frameOverlay.classList.add('loaded');
     }
   });
-
   socket.on('start-countdown', ({ timer }) => {
     if (!capturing) startCountdown(timer);
   });
-
   socket.on('cam-control', ({ cmd }) => applyCamControl(cmd));
-
-  socket.on('show-photo', ({ url }) => {
-    if (url) showResult(url, false);
-  });
-
+  socket.on('show-photo', ({ url }) => { if (url) showResult(url, false); });
   socket.on('photo-ready', ({ total }) => {
     photoCountEl.textContent = `Foto ${total} do evento`;
   });
@@ -218,124 +230,117 @@
     countdownOvl.classList.remove('hidden');
 
     for (let i = seconds; i > 0; i--) {
-      countdownNum.textContent = i;
+      countdownNum.textContent = String(i);
       countdownNum.style.animation = 'none';
       void countdownNum.offsetWidth;
       countdownNum.style.animation = 'countPop .7s ease both';
       await sleep(1000);
     }
     countdownNum.textContent = '📸';
-    await sleep(300);
+    await sleep(200);
     countdownOvl.classList.add('hidden');
 
-    if (useGphoto) {
-      await doGphotoCapture();
-    } else {
-      await doWebcamCapture();
-    }
+    if (useGphoto) await doGphotoCapture();
+    else           await doWebcamCapture();
 
     capturing = false;
     overlayText.style.opacity = '1';
-    overlayText.textContent = IDLE_MESSAGES[msgIdx];
+    overlayText.textContent = IDLE_MSGS[msgIdx];
   }
 
-  /* ── gphoto2 capture (server-side, full-resolution) ── */
+  /* ── gphoto2 (Sony A7III full-res) ── */
   async function doGphotoCapture() {
     triggerFlash();
     showState('result');
     resultPhoto.src = '';
-    resultPhoto.alt = 'Capturando em alta resolução…';
-    photoCountEl.textContent = 'Capturando em alta resolução…';
-    qrLoading.style.display = 'flex';
+    qrBody.textContent = 'Capturando em alta resolução…';
+    qrLoader.innerHTML = '<div class="spinner" style="border-color:rgba(0,59,113,.12);border-top-color:#003B71"></div><p style="font-size:12px;color:#666;margin:4px 0 0">Capturando…</p>';
+    qrLoader.style.display = 'flex';
     qrImg.style.display = 'none';
+    btnDownload.classList.add('hidden');
 
     try {
       const resp = await fetch('/api/gphoto/capture', { method: 'POST' });
       const data = await resp.json();
-
       if (data.success && data.data) {
-        const photoUrl = data.data.url;
-        showResult(photoUrl, true);
-        generateQR(photoUrl);
-        socket.emit('photo-uploaded', {
-          code: sessionCode,
-          url: photoUrl,
-          thumbnail: data.data.thumb?.url || photoUrl
-        });
-      } else {
-        showState('preview');
-      }
-    } catch (err) {
-      console.error('gphoto capture error:', err);
-      showState('preview');
-    }
+        const url = data.data.url;
+        showResult(url, true);
+        generateQR(url);
+        socket.emit('photo-uploaded', { code: sessionCode, url, thumbnail: data.data.thumb?.url || url });
+      } else { showState('preview'); }
+    } catch { showState('preview'); }
   }
 
-  /* ── Webcam capture — same technique as fotototem-ref ── */
+  /* ── Webcam (canvas) — exatamente como fotototem-ref/CameraFeed.tsx captureImage() ── */
   async function doWebcamCapture() {
     triggerFlash();
 
-    const res = RESOLUTIONS[aspectRatio];
+    /* fotototem-ref usa OUTPUT_WIDTH/HEIGHT fixos e calcula crop para cover */
+    const res  = RESOLUTIONS[aspectRatio];
     captureCanvas.width  = res.w;
     captureCanvas.height = res.h;
     const ctx = captureCanvas.getContext('2d');
 
-    // Crop video to target aspect (cover behavior)
     const vW = video.videoWidth  || video.offsetWidth;
     const vH = video.videoHeight || video.offsetHeight;
-    const targetAspect = res.w / res.h;
+    const canvasAspect = res.w / res.h;
     const videoAspect  = vW / vH;
 
-    let sx, sy, sw, sh;
-    if (videoAspect > targetAspect) {
-      sh = vH; sw = vH * targetAspect;
-      sx = (vW - sw) / 2; sy = 0;
+    let drawW, drawH, offX, offY;
+    if (videoAspect > canvasAspect) {
+      /* vídeo mais largo — corta lados */
+      drawH = res.h; drawW = res.h * videoAspect;
+      offX = (res.w - drawW) / 2; offY = 0;
     } else {
-      sw = vW; sh = vW / targetAspect;
-      sx = 0; sy = (vH - sh) / 2;
+      /* vídeo mais alto — corta topo/baixo */
+      drawW = res.w; drawH = res.w / videoAspect;
+      offX = 0; offY = (res.h - drawH) / 2;
     }
 
-    // Draw mirrored (mirror for natural selfie)
+    /* Espelha (como -scale-x-100 do fotototem-ref) + filtros CSS */
     ctx.save();
     ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     ctx.translate(res.w, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, res.w, res.h);
+    ctx.drawImage(video, offX, offY, drawW, drawH);
     ctx.restore();
     ctx.filter = 'none';
 
-    // Composite frame overlay if loaded
+    /* Composite frame — idêntico ao fotototem-ref captureImage() linhas 95-107 */
     if (frameOverlay.classList.contains('loaded') && frameOverlay.naturalWidth > 0) {
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
     }
 
     const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.93);
-    showResult(dataUrl, true);
+    lastDataUrl = dataUrl;
 
-    const base64 = dataUrl.split(',')[1];
-    qrLoading.style.display = 'flex';
-    qrImg.style.display = 'none';
+    showResult(dataUrl, true);
+    setupDownload(dataUrl);
+
+    /* Upload para ImgBB via proxy do servidor */
+    qrBody.textContent = 'Gerando link para compartilhamento…';
+    qrLoader.innerHTML = '<div class="spinner" style="border-color:rgba(0,59,113,.12);border-top-color:#003B71"></div><p style="font-size:12px;color:#666;margin:4px 0 0">Enviando…</p>';
+    qrLoader.style.display = 'flex';
+    qrImg.style.display    = 'none';
 
     try {
       const resp = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64 })
+        body: JSON.stringify({ image: dataUrl.split(',')[1] })
       });
       const data = await resp.json();
-      if (data.success && data.data) {
-        const photoUrl = data.data.url;
-        generateQR(photoUrl);
-        socket.emit('photo-uploaded', {
-          code: sessionCode,
-          url: photoUrl,
-          thumbnail: data.data.thumb?.url || photoUrl
-        });
+      if (data.success && data.data?.url) {
+        const url = data.data.url;
+        generateQR(url);
+        socket.emit('photo-uploaded', { code: sessionCode, url, thumbnail: data.data.thumb?.url || url });
       } else {
-        showQRError('Upload falhou');
+        qrBody.textContent = 'Upload falhou — salve via botão abaixo.';
+        qrLoader.style.display = 'none';
       }
     } catch {
-      showQRError('Sem conexão');
+      qrBody.textContent = 'Sem conexão — salve via botão abaixo.';
+      qrLoader.style.display = 'none';
     }
   }
 
@@ -348,12 +353,10 @@
     setTimeout(() => flashOvl.classList.add('hidden'), 600);
   }
 
-  /* ═══ RESULT ═══ */
-
-  function showResult(imgSrc, startTimer = true) {
-    if (imgSrc) resultPhoto.src = imgSrc;
+  /* ── Result ── */
+  function showResult(src, startTimer) {
+    if (src) resultPhoto.src = src;
     showState('result');
-
     if (resultTimeout) clearTimeout(resultTimeout);
     if (startTimer) {
       resetBar.style.transition = 'none';
@@ -361,56 +364,29 @@
       void resetBar.offsetWidth;
       resetBar.style.transition = `width ${RESULT_MS}ms linear`;
       resetBar.style.width = '0%';
-      resultTimeout = setTimeout(resetToPreview, RESULT_MS);
+      resultTimeout = setTimeout(() => showState('preview'), RESULT_MS);
     }
   }
 
-  /* ── QR Code: use toDataURL + <img> (most reliable approach) ── */
-  function generateQR(url) {
-    if (typeof QRCode === 'undefined') {
-      showQRError('Lib não carregada');
-      return;
-    }
-
-    qrLoading.style.display = 'flex';
-    qrImg.style.display = 'none';
-
-    QRCode.toDataURL(url, {
-      width: 200,
-      margin: 2,
-      color: { dark: '#003B71', light: '#FFFFFF' },
-      errorCorrectionLevel: 'L',
-    }, (err, dataUrl) => {
-      qrLoading.style.display = 'none';
-      if (err || !dataUrl) {
-        showQRError(err?.message || 'Erro QR');
-        return;
-      }
-      qrImg.src = dataUrl;
-      qrImg.style.display = 'block';
-    });
+  /* ── Download button (fotototem-ref has this too) ── */
+  function setupDownload(dataUrl) {
+    btnDownload.classList.remove('hidden');
+    btnDownload.onclick = () => {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `globo_foto_${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
   }
 
-  function showQRError(msg) {
-    qrLoading.style.display = 'none';
-    qrImg.style.display = 'none';
-    const p = document.createElement('p');
-    p.textContent = '⚠ ' + msg;
-    p.style.cssText = 'font-size:12px;color:#888;width:200px;text-align:center;padding:20px 0;';
-    qrImg.parentNode.appendChild(p);
-  }
-
-  function resetToPreview() {
-    showState('preview');
-    if (resultTimeout) { clearTimeout(resultTimeout); resultTimeout = null; }
-  }
-
+  /* ── Frame loader ── */
   function loadFrame() {
     if (!sessionCode) return;
     const url = `/api/frame/${sessionCode}?ratio=${aspectRatio}&t=${Date.now()}`;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => { frameOverlay.src = url; frameOverlay.classList.add('loaded'); };
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload  = () => { frameOverlay.src = url; frameOverlay.classList.add('loaded'); };
     img.onerror = () => frameOverlay.classList.remove('loaded');
     img.src = url;
   }
