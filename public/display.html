@@ -9,63 +9,99 @@
 </head>
 <body>
   <div class="display-page" id="app">
+    <!-- ── Gradient stripe ── -->
+    <div class="grad-stripe top-stripe"></div>
 
-    <!-- ── Preview Mode ── -->
-    <div class="preview-container" id="preview-mode">
-      <div class="preview-wrapper" id="preview-wrapper" data-ratio="4:5">
-        <video id="camera-feed" autoplay playsinline muted></video>
-        <img id="frame-overlay" alt="" />
-
-        <!-- Countdown -->
-        <div class="countdown-overlay hidden" id="countdown-overlay">
-          <span class="countdown-number" id="countdown-number">3</span>
-        </div>
-        <!-- Flash -->
-        <div class="flash-overlay hidden" id="flash-overlay"></div>
+    <!-- ═══ STATE: Booting ═══ -->
+    <div class="state state-booting" id="state-booting">
+      <div class="booting-content">
+        <div class="spinner"></div>
+        <p class="booting-msg">Preparando a câmera</p>
+        <p class="booting-sub">Só um instante.</p>
       </div>
-
-      <!-- Idle message -->
-      <div class="idle-message" id="idle-msg">Posicione-se e sorria!</div>
     </div>
 
-    <!-- ── Bottom Bar ── -->
-    <div class="bottom-bar">
-      <div class="session-code-display">
-        <span class="label">Código</span>
-        <span class="code" id="session-code">······</span>
-      </div>
-      <div class="status-bar">
-        <div class="status-dot" id="status-dot"></div>
-        <span id="status-text">Aguardando controle</span>
-      </div>
-      <span class="brand-mark">GLOBO BOOTH</span>
-    </div>
+    <!-- ═══ STATE: Preview (waiting + ready) ═══ -->
+    <div class="state state-preview hidden" id="state-preview">
+      <div class="preview-stage">
+        <!-- Camera stage card -->
+        <div class="stage-card" id="stage-card" data-ratio="4:5">
+          <video id="camera-feed" autoplay playsinline muted></video>
+          <img id="frame-overlay" alt="" />
 
-    <!-- ── Result View (photo + QR) ── -->
-    <div class="result-view hidden" id="result-view">
-      <div class="result-content">
-        <img id="result-photo" class="result-photo" alt="Sua foto" />
-        <div class="qr-section">
-          <canvas id="qr-canvas"></canvas>
-          <p class="qr-label">Escaneie para baixar sua foto!</p>
-          <p class="qr-sublabel" id="photo-count"></p>
+          <!-- Countdown overlay -->
+          <div class="countdown-overlay hidden" id="countdown-overlay">
+            <span class="countdown-number" id="countdown-number">3</span>
+          </div>
+          <!-- Flash -->
+          <div class="flash-overlay hidden" id="flash-overlay"></div>
         </div>
       </div>
-      <div class="reset-timer">
-        <div class="bar" id="reset-bar"></div>
+
+      <!-- Message pill -->
+      <div class="message-pill" id="message-pill">
+        <svg class="pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span id="pill-text">Quase pronto para a foto</span>
+      </div>
+
+      <!-- Bottom bar -->
+      <div class="bottom-bar" id="bottom-bar">
+        <div class="bar-section bar-code">
+          <span class="bar-label">Código</span>
+          <span class="bar-value" id="session-code">------</span>
+        </div>
+        <div class="bar-section bar-status">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Aguardando controle</span>
+        </div>
+        <div class="bar-section bar-brand">
+          <span class="brand-text">Globo Photo Booth</span>
+        </div>
       </div>
     </div>
 
-    <!-- ── Camera Error ── -->
-    <div class="camera-error hidden" id="camera-error">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#939598" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-      <h2>Câmera não encontrada</h2>
-      <p>Verifique se a Sony A7III está conectada via Imaging Edge Desktop e tente novamente.</p>
-      <button class="btn btn-primary" onclick="location.reload()">Tentar novamente</button>
+    <!-- ═══ STATE: Result (photo + QR) ═══ -->
+    <div class="state state-result hidden" id="state-result">
+      <div class="result-layout">
+        <!-- Photo panel -->
+        <div class="result-photo-panel">
+          <img id="result-photo" alt="Sua foto" />
+        </div>
+        <!-- QR panel -->
+        <div class="result-qr-panel">
+          <h2 class="qr-title">Sua foto ficou incrível!</h2>
+          <p class="qr-body">Escaneie o QR Code abaixo para baixar no seu celular.</p>
+          <div class="qr-wrapper">
+            <canvas id="qr-canvas"></canvas>
+          </div>
+          <p class="qr-count" id="photo-count"></p>
+        </div>
+      </div>
+      <!-- Progress bar -->
+      <div class="reset-bar">
+        <div class="reset-bar-fill" id="reset-bar"></div>
+      </div>
+    </div>
+
+    <!-- ═══ STATE: Camera Error ═══ -->
+    <div class="state state-error hidden" id="state-error">
+      <div class="error-content">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#939598" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+        <h2>Câmera não encontrada</h2>
+        <p>Verifique se a câmera está conectada via Imaging Edge Desktop.</p>
+        <button class="btn btn-primary" onclick="location.reload()">Tentar novamente</button>
+      </div>
     </div>
   </div>
 
-  <!-- Hidden canvas for compositing -->
+  <!-- Hidden canvas -->
   <canvas id="capture-canvas" style="display:none"></canvas>
 
   <script src="/socket.io/socket.io.js"></script>
