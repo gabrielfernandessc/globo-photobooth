@@ -6,7 +6,7 @@
 html, body {
   height: 100%; width: 100%;
   overflow: hidden;
-  background: var(--azul-noite);
+  background: #0A0A0A;
   color: var(--branco);
   margin: 0; padding: 0;
 }
@@ -16,7 +16,7 @@ html, body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(160deg, #003B71 0%, #0055A5 55%, #05A6FF 100%);
+  background: #0A0A0A;
   position: relative;
   overflow: hidden;
 }
@@ -215,7 +215,7 @@ html, body {
 .state-result {
   position: fixed;
   inset: 0; z-index: 100;
-  background: linear-gradient(160deg, #003B71 0%, #0055A5 55%, #05A6FF 100%);
+  background: #0A0A0A;
   flex-direction: row;
   align-items: center;
   justify-content: center;
