@@ -196,7 +196,7 @@
     if (!file || !sessionCode || !pendingFrameRatio) return;
 
     const btn = pendingFrameRatio === '4:5' ? btnFrame4x5 : btnFrame16x9;
-    btn.textContent = '⏳ Enviando...';
+        btn.textContent = 'Enviando...';
 
     const formData = new FormData();
     formData.append('frame', file);
@@ -210,14 +210,14 @@
       const data = await resp.json();
       if (data.success) {
         btn.classList.add('has-frame');
-        btn.textContent = `✅ Frame ${pendingFrameRatio}`;
+        btn.textContent = `Pronto ${pendingFrameRatio}`;
         vibrate(50);
       }
     } catch (err) {
       console.error('Frame upload error:', err);
-      btn.textContent = `❌ Erro`;
+      btn.textContent = `Erro ao enviar`;
       setTimeout(() => {
-        btn.textContent = `📎 Frame ${pendingFrameRatio}`;
+        btn.textContent = `Enviar frame ${pendingFrameRatio}`;
       }, 2000);
     }
 

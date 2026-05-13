@@ -1,10 +1,12 @@
 /* ══════════════════════════════════════════════════════════
    CONTROL PAGE — Controle Remoto (mobile-first)
+   Fundo claro · Azul como acento · Tipografia controlada
    ══════════════════════════════════════════════════════════ */
 
 html, body {
   height: 100%;
-  background: var(--preto-100);
+  background: var(--branco);
+  color: var(--preto);
 }
 
 .control-page {
@@ -12,29 +14,28 @@ html, body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  max-width: 480px;
+  max-width: 420px;
   margin: 0 auto;
   padding: var(--s24);
-  padding-top: var(--s48);
+  padding-top: var(--s32);
 }
 
 /* ── Header ── */
 .ctrl-header {
   text-align: center;
   margin-bottom: var(--s32);
+  padding-bottom: var(--s16);
+  border-bottom: 1px solid var(--preto-5);
 }
 .ctrl-header .logo {
-  font-size: var(--body-g);
-  font-weight: 800;
-  background: var(--grad-globo);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: var(--s4);
+  font-size: var(--body);
+  font-weight: 700;
+  color: var(--azul);
 }
 .ctrl-header .subtitle {
-  font-size: var(--label-g);
+  font-size: var(--label);
   color: var(--preto-50);
+  margin-top: 2px;
 }
 
 /* ── Pairing Screen ── */
@@ -45,13 +46,14 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: var(--s32);
-  animation: fadeIn .4s ease;
+  animation: fadeIn .3s ease;
 }
 
 .pairing-title {
-  font-size: var(--body-g);
-  font-weight: 600;
+  font-size: var(--body);
+  font-weight: 500;
   text-align: center;
+  color: var(--preto);
 }
 
 .code-inputs {
@@ -60,32 +62,33 @@ html, body {
 }
 
 .code-inputs input {
-  width: 48px;
-  height: 60px;
+  width: 46px;
+  height: 56px;
   text-align: center;
-  font-size: var(--body-g);
+  font-size: 24px;
   font-weight: 700;
   font-family: var(--font);
-  background: rgba(255,255,255,.08);
-  border: 2px solid rgba(255,255,255,.12);
+  background: var(--preto-5);
+  border: 1.5px solid var(--preto-25);
   border-radius: var(--radius-sm);
-  color: var(--branco);
+  color: var(--preto);
   outline: none;
   transition: all .2s;
   -webkit-appearance: none;
 }
 .code-inputs input:focus {
   border-color: var(--azul);
-  background: rgba(5,166,255,.08);
-  box-shadow: 0 0 12px rgba(5,166,255,.2);
+  background: var(--branco);
+  box-shadow: 0 0 0 3px rgba(5,166,255,.12);
 }
 .code-inputs input.filled {
   border-color: var(--azul);
+  background: var(--branco);
 }
 
 .pairing-error {
   color: var(--vermelho);
-  font-size: var(--label-g);
+  font-size: var(--label);
   min-height: 20px;
 }
 
@@ -95,7 +98,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: var(--s24);
-  animation: fadeIn .4s ease;
+  animation: fadeIn .3s ease;
 }
 
 /* Connection status */
@@ -103,23 +106,23 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--s8);
-  padding: var(--s8) var(--s16);
+  gap: 6px;
+  padding: 6px var(--s16);
   border-radius: 100px;
-  font-size: var(--label-m);
+  font-size: var(--label);
   font-weight: 500;
   align-self: center;
 }
 .connection-status.online {
-  background: rgba(0,200,83,.1);
-  color: #00c853;
+  background: rgba(0,200,83,.08);
+  color: #00894A;
 }
 .connection-status.offline {
-  background: rgba(255,12,31,.1);
+  background: rgba(255,12,31,.08);
   color: var(--vermelho);
 }
 .connection-status .dot {
-  width: 8px; height: 8px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
@@ -130,14 +133,14 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: var(--s16);
-  margin: var(--s16) 0;
+  padding: var(--s16) 0;
 }
 
 .capture-btn {
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
-  border: 5px solid var(--branco);
+  border: 4px solid var(--azul);
   background: transparent;
   cursor: pointer;
   position: relative;
@@ -147,34 +150,36 @@ html, body {
 .capture-btn::after {
   content: '';
   position: absolute;
-  inset: 8px;
+  inset: 6px;
   border-radius: 50%;
-  background: var(--branco);
+  background: var(--azul);
   transition: all .15s ease;
 }
 .capture-btn:active {
   transform: scale(.92);
 }
 .capture-btn:active::after {
-  background: var(--azul);
+  background: var(--azul-profundo);
 }
 .capture-btn:disabled {
-  opacity: .3;
+  border-color: var(--preto-25);
   cursor: not-allowed;
 }
+.capture-btn:disabled::after {
+  background: var(--preto-25);
+}
 .capture-btn:disabled:active { transform: none; }
-.capture-btn:disabled:active::after { background: var(--branco); }
 
 .capture-btn.capturing {
   border-color: var(--vermelho);
 }
 .capture-btn.capturing::after {
   background: var(--vermelho);
-  animation: pulse 1s ease infinite;
+  animation: pulse .8s ease infinite;
 }
 
 .capture-hint {
-  font-size: var(--label-g);
+  font-size: var(--label);
   color: var(--preto-50);
 }
 
@@ -187,20 +192,20 @@ html, body {
 
 .setting-group {
   padding: var(--s16);
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.06);
+  background: var(--preto-5);
   border-radius: var(--radius);
 }
 
 .setting-label {
-  font-size: var(--label-m);
+  font-size: 12px;
   color: var(--preto-50);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: .8px;
   margin-bottom: var(--s8);
+  font-weight: 500;
 }
 
-/* Timer pills */
+/* Pills */
 .timer-options, .ratio-options {
   display: flex;
   gap: var(--s8);
@@ -209,18 +214,18 @@ html, body {
 .pill {
   flex: 1;
   padding: var(--s8) var(--s16);
-  border-radius: 100px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: transparent;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--preto-25);
+  background: var(--branco);
   color: var(--preto-50);
   font-family: var(--font);
-  font-size: var(--label-g);
+  font-size: var(--label);
   font-weight: 500;
   cursor: pointer;
   transition: all .2s;
   text-align: center;
 }
-.pill:hover { border-color: var(--azul); color: var(--branco); }
+.pill:hover { border-color: var(--azul); color: var(--preto); }
 .pill.active {
   background: var(--azul);
   border-color: var(--azul);
@@ -231,27 +236,27 @@ html, body {
 .frame-upload-row {
   display: flex;
   gap: var(--s8);
-  align-items: center;
 }
 
 .frame-upload-btn {
   flex: 1;
   padding: var(--s8) var(--s16);
   border-radius: var(--radius-sm);
-  border: 1px dashed rgba(255,255,255,.15);
-  background: transparent;
+  border: 1.5px dashed var(--preto-25);
+  background: var(--branco);
   color: var(--preto-50);
   font-family: var(--font);
-  font-size: var(--label-m);
+  font-size: 13px;
   cursor: pointer;
   transition: all .2s;
   text-align: center;
 }
-.frame-upload-btn:hover { border-color: var(--azul); color: var(--branco); }
+.frame-upload-btn:hover { border-color: var(--azul); color: var(--azul); }
 .frame-upload-btn.has-frame {
-  border-color: #00c853;
+  border-color: #00894A;
   border-style: solid;
-  color: #00c853;
+  color: #00894A;
+  background: rgba(0,137,74,.04);
 }
 
 /* ── Last Photo ── */
@@ -260,23 +265,20 @@ html, body {
 }
 .last-photo-section img {
   width: 100%;
-  max-height: 200px;
+  max-height: 180px;
   object-fit: contain;
   border-radius: var(--radius-sm);
   margin-top: var(--s8);
+  border: 1px solid var(--preto-5);
 }
 
 /* ── Photo counter ── */
 .photo-counter {
   text-align: center;
-  font-size: var(--body-p);
+  font-size: var(--label);
   font-weight: 600;
-  color: var(--branco);
-  padding: var(--s8);
+  color: var(--preto);
 }
 .photo-counter span {
-  background: var(--grad-globo);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--azul);
 }
