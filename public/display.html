@@ -14,7 +14,6 @@
 
     <!-- ═══ BOOTING ═══ -->
     <div class="state state-booting" id="state-booting">
-      <!-- Globo logo -->
       <div style="background:#fff;border-radius:50%;padding:12px;box-shadow:0 4px 24px rgba(0,0,0,.3);margin-bottom:8px">
         <svg width="48" height="48" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
           <g clip-path="url(#cb)">
@@ -79,37 +78,50 @@
         </div>
       </div>
 
-      <!-- Main: preview + text -->
+      <!-- Main: preview + text side by side -->
       <div class="preview-main">
 
-        <!-- Camera preview -->
-        <div class="preview-stage">
-          <div class="stage-card" id="stage-card" data-ratio="4:5">
-            <video id="camera-feed" autoplay playsinline muted></video>
-            <img id="gphoto-feed" alt="Preview" class="hidden" />
+        <!-- Camera preview (resizable) -->
+        <div class="preview-stage" id="preview-stage-wrap">
+
+          <!-- ★ KEY FIX: .stage-border-wrap is NOT overflow:hidden
+               so the frame overlay can extend freely over the white border.
+               Only .stage-card (inside) clips the camera feed. -->
+          <div class="stage-border-wrap">
+
+            <!-- Camera clip zone — only clips video/gphoto stream -->
+            <div class="stage-card" id="stage-card" data-ratio="4:5">
+              <video id="camera-feed" autoplay playsinline muted></video>
+              <img id="gphoto-feed" alt="Preview" class="hidden" />
+
+              <!-- Mode badge -->
+              <div class="mode-badge hidden" id="mode-badge">
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4"/></svg>
+                <span id="mode-label">Sony</span>
+              </div>
+
+              <!-- Text overlay on preview -->
+              <div class="preview-overlay-text" id="overlay-text">📸 Faça uma pose incrível!</div>
+
+              <!-- Countdown -->
+              <div class="countdown-overlay hidden" id="countdown-overlay">
+                <span class="hint-text">Foto em</span>
+                <div class="countdown-number" id="countdown-number">3</div>
+              </div>
+
+              <!-- Flash -->
+              <div class="flash-overlay hidden" id="flash-overlay"></div>
+            </div>
+
+            <!-- ★ Frame overlay is OUTSIDE stage-card but INSIDE stage-border-wrap.
+                 Not clipped by stage-card's overflow:hidden.
+                 Uses object-fit:fill to match frame PNG dimensions exactly. -->
             <img id="frame-overlay" alt="" />
-
-            <!-- Mode badge (Sony) -->
-            <div class="mode-badge hidden" id="mode-badge">
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4"/></svg>
-              <span id="mode-label">Sony</span>
-            </div>
-
-            <!-- Text overlay on preview -->
-            <div class="preview-overlay-text" id="overlay-text">📸 Faça uma pose incrível!</div>
-
-            <!-- Countdown -->
-            <div class="countdown-overlay hidden" id="countdown-overlay">
-              <span class="hint-text">Foto em</span>
-              <div class="countdown-number" id="countdown-number">3</div>
-            </div>
-
-            <!-- Flash -->
-            <div class="flash-overlay hidden" id="flash-overlay"></div>
           </div>
+
         </div>
 
-        <!-- Text side panel (like fotototem-ref) -->
+        <!-- Text side panel -->
         <div class="preview-text-panel">
           <div class="sparkle-pill">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -136,7 +148,9 @@
         <h2 class="qr-title">Ficou ótima! 🎉</h2>
         <p class="qr-body">Aponte a câmera do celular para o QR Code para abrir a foto.</p>
         <div class="qr-wrapper">
-          <canvas id="qr-canvas"></canvas>
+          <!-- Using <img> instead of <canvas> — more reliable across browsers -->
+          <img id="qr-img" alt="QR Code" width="200" height="200" style="display:block;border-radius:4px" />
+          <div id="qr-loading" style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#555">Gerando QR…</div>
         </div>
         <p class="qr-count" id="photo-count"></p>
       </div>
@@ -163,6 +177,7 @@
   <canvas id="capture-canvas" style="display:none"></canvas>
 
   <script src="/socket.io/socket.io.js"></script>
+  <!-- QRCode via CDN — toDataURL is more reliable than toCanvas -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script>
     function toggleFullscreen() {

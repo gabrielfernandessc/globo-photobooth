@@ -1,7 +1,7 @@
 /* ══════════════════════════════════════════════════════════
    DISPLAY.JS — Tela do Totem
    Modo automático: detecta gphoto2 → Sony A7III full-res
-   Fallback: getUserMedia (webcam/Imaging Edge)
+   Fallback: getUserMedia (webcam/Imaging Edge) máxima qualidade
    ══════════════════════════════════════════════════════════ */
 
 (() => {
@@ -27,9 +27,9 @@
   const flashOvl      = document.getElementById('flash-overlay');
   const sessionCodeEl = document.getElementById('session-code');
   const statusDot     = document.getElementById('status-dot');
-  const statusText    = document.getElementById('status-text');
   const resultPhoto   = document.getElementById('result-photo');
-  const qrCanvas      = document.getElementById('qr-canvas');
+  const qrImg         = document.getElementById('qr-img');
+  const qrLoading     = document.getElementById('qr-loading');
   const photoCountEl  = document.getElementById('photo-count');
   const resetBar      = document.getElementById('reset-bar');
   const captureCanvas = document.getElementById('capture-canvas');
@@ -37,15 +37,18 @@
   /* ── State ── */
   let sessionCode  = null;
   let stream       = null;
-  let videoTrack   = null;
-  let actualW = 0, actualH = 0;
+  let useGphoto    = false;
   let aspectRatio  = '4:5';
   let capturing    = false;
   let resultTimeout = null;
-  let useGphoto    = false; // mode flag
 
   const RESULT_MS  = 18000;
-  const RESOLUTIONS = { '4:5': { w: 1080, h: 1350 }, '16:9': { w: 1920, h: 1080 } };
+
+  /* Portrait = 1080×1920 (9:16 like fotototem-ref), Landscape = 1440×1080 */
+  const RESOLUTIONS = {
+    '4:5':  { w: 1080, h: 1920 },
+    '16:9': { w: 1440, h: 1080 }
+  };
 
   const IDLE_MESSAGES = [
     '📸 Faça uma pose incrível!',
@@ -69,7 +72,6 @@
     bootingMsg.textContent = 'Detectando câmera…';
     bootingSub.textContent  = 'Aguarde um instante';
 
-    // Try gphoto2 first
     try {
       const r = await fetch('/api/gphoto/status');
       const data = await r.json();
@@ -98,41 +100,37 @@
 
   /* ═══ GPHOTO2 MODE ═══ */
   function startGphotoMode(cameraName) {
-    // Show MJPEG stream from server
     gphotoFeed.classList.remove('hidden');
     video.classList.add('hidden');
     gphotoFeed.src = '/api/gphoto/preview';
-    gphotoFeed.style.transform = 'scaleX(-1)'; // mirror for natural preview
-
-    // Show mode badge
+    gphotoFeed.style.transform = 'scaleX(-1)';
     modeBadge.classList.remove('hidden');
     modeLabel.textContent = cameraName.split(' ').slice(0, 3).join(' ');
-
     showState('preview');
   }
 
-  /* ═══ WEBCAM MODE ═══ */
+  /* ═══ WEBCAM MODE — request highest possible resolution ═══ */
   async function startWebcamMode() {
     bootingMsg.textContent = 'Abrindo câmera…';
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 4096 }, height: { ideal: 2160 } },
-        audio: false
-      });
-      video.srcObject = stream;
-      await video.play();
 
-      videoTrack = stream.getVideoTracks()[0];
-      const s = videoTrack.getSettings();
-      actualW = s.width; actualH = s.height;
+    // Try resolutions from highest to lowest
+    const constraints = [
+      { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } }, // 4K
+      { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, // FHD
+      { width: { ideal: 1280 }, height: { ideal:  720 }                             }, // HD
+    ];
 
-      video.classList.remove('hidden');
-      gphotoFeed.classList.add('hidden');
-      showState('preview');
-    } catch (err) {
-      console.error('Camera error:', err);
-      showState('error');
+    for (const video_c of constraints) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        showState('preview');
+        return;
+      } catch { /* try next */ }
     }
+
+    showState('error');
   }
 
   /* ── Idle message rotator ── */
@@ -149,7 +147,7 @@
     }, 4000);
   }
 
-  /* ── CSS Camera controls (webcam mode) ── */
+  /* ── CSS Camera controls ── */
   function applyCamControl(cmd) {
     if (cmd.brightness !== undefined) camFilters.brightness = Math.round(100 + cmd.brightness * 10);
     if (cmd.contrast   !== undefined) camFilters.contrast   = cmd.contrast;
@@ -159,7 +157,6 @@
     const filterStr = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     video.style.filter  = filterStr;
     video.style.transform = `scaleX(-1) scale(${camZoom})`;
-    // Also apply to gphoto feed for visual consistency
     gphotoFeed.style.filter = filterStr;
     gphotoFeed.style.transform = `scaleX(-1) scale(${camZoom})`;
   }
@@ -168,7 +165,7 @@
   function createSession() {
     socket.emit('create-session', ({ code }) => {
       sessionCode = code;
-      sessionCodeEl.textContent = code; // 4 chars, no space needed
+      sessionCodeEl.textContent = code; // 4-char alphanum
     });
   }
 
@@ -209,6 +206,10 @@
     if (url) showResult(url, false);
   });
 
+  socket.on('photo-ready', ({ total }) => {
+    photoCountEl.textContent = `Foto ${total} do evento`;
+  });
+
   /* ═══ CAPTURE FLOW ═══ */
 
   async function startCountdown(seconds) {
@@ -223,7 +224,8 @@
       countdownNum.style.animation = 'countPop .7s ease both';
       await sleep(1000);
     }
-
+    countdownNum.textContent = '📸';
+    await sleep(300);
     countdownOvl.classList.add('hidden');
 
     if (useGphoto) {
@@ -240,13 +242,12 @@
   /* ── gphoto2 capture (server-side, full-resolution) ── */
   async function doGphotoCapture() {
     triggerFlash();
-    showResult('/css/design-system.css', false); // Show loading state with placeholder
-
-    // Show loading in result
-    resultPhoto.src = '';
-    resultPhoto.alt = 'Capturando…';
     showState('result');
+    resultPhoto.src = '';
+    resultPhoto.alt = 'Capturando em alta resolução…';
     photoCountEl.textContent = 'Capturando em alta resolução…';
+    qrLoading.style.display = 'flex';
+    qrImg.style.display = 'none';
 
     try {
       const resp = await fetch('/api/gphoto/capture', { method: 'POST' });
@@ -262,7 +263,6 @@
           thumbnail: data.data.thumb?.url || photoUrl
         });
       } else {
-        console.error('gphoto capture failed:', data);
         showState('preview');
       }
     } catch (err) {
@@ -271,40 +271,50 @@
     }
   }
 
-  /* ── Webcam capture (canvas composite) ── */
+  /* ── Webcam capture — same technique as fotototem-ref ── */
   async function doWebcamCapture() {
     triggerFlash();
 
     const res = RESOLUTIONS[aspectRatio];
-    captureCanvas.width = res.w;
+    captureCanvas.width  = res.w;
     captureCanvas.height = res.h;
     const ctx = captureCanvas.getContext('2d');
 
+    // Crop video to target aspect (cover behavior)
+    const vW = video.videoWidth  || video.offsetWidth;
+    const vH = video.videoHeight || video.offsetHeight;
     const targetAspect = res.w / res.h;
-    const videoAspect  = actualW / actualH;
+    const videoAspect  = vW / vH;
+
     let sx, sy, sw, sh;
     if (videoAspect > targetAspect) {
-      sh = actualH; sw = actualH * targetAspect;
-      sx = (actualW - sw) / 2; sy = 0;
+      sh = vH; sw = vH * targetAspect;
+      sx = (vW - sw) / 2; sy = 0;
     } else {
-      sw = actualW; sh = actualW / targetAspect;
-      sx = 0; sy = (actualH - sh) / 2;
+      sw = vW; sh = vW / targetAspect;
+      sx = 0; sy = (vH - sh) / 2;
     }
 
+    // Draw mirrored (mirror for natural selfie)
     ctx.save();
     ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
-    ctx.translate(res.w, 0); ctx.scale(-1, 1);
+    ctx.translate(res.w, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, res.w, res.h);
     ctx.restore();
     ctx.filter = 'none';
 
+    // Composite frame overlay if loaded
     if (frameOverlay.classList.contains('loaded') && frameOverlay.naturalWidth > 0) {
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
     }
 
-    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.92);
-    const base64  = dataUrl.split(',')[1];
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.93);
     showResult(dataUrl, true);
+
+    const base64 = dataUrl.split(',')[1];
+    qrLoading.style.display = 'flex';
+    qrImg.style.display = 'none';
 
     try {
       const resp = await fetch('/api/upload', {
@@ -317,11 +327,16 @@
         const photoUrl = data.data.url;
         generateQR(photoUrl);
         socket.emit('photo-uploaded', {
-          code: sessionCode, url: photoUrl,
+          code: sessionCode,
+          url: photoUrl,
           thumbnail: data.data.thumb?.url || photoUrl
         });
-      } else { showQRError(); }
-    } catch { showQRError(); }
+      } else {
+        showQRError('Upload falhou');
+      }
+    } catch {
+      showQRError('Sem conexão');
+    }
   }
 
   /* ── Flash ── */
@@ -350,30 +365,45 @@
     }
   }
 
+  /* ── QR Code: use toDataURL + <img> (most reliable approach) ── */
   function generateQR(url) {
-    if (typeof QRCode === 'undefined') return;
-    QRCode.toCanvas(qrCanvas, url, {
-      width: 180, margin: 2,
-      color: { dark: '#003B71', light: '#FFFFFF' }
-    }, err => { if (err) console.error('QR error:', err); });
+    if (typeof QRCode === 'undefined') {
+      showQRError('Lib não carregada');
+      return;
+    }
+
+    qrLoading.style.display = 'flex';
+    qrImg.style.display = 'none';
+
+    QRCode.toDataURL(url, {
+      width: 200,
+      margin: 2,
+      color: { dark: '#003B71', light: '#FFFFFF' },
+      errorCorrectionLevel: 'L',
+    }, (err, dataUrl) => {
+      qrLoading.style.display = 'none';
+      if (err || !dataUrl) {
+        showQRError(err?.message || 'Erro QR');
+        return;
+      }
+      qrImg.src = dataUrl;
+      qrImg.style.display = 'block';
+    });
   }
 
-  function showQRError() {
-    const ctx = qrCanvas.getContext('2d');
-    qrCanvas.width = 180; qrCanvas.height = 180;
-    ctx.fillStyle = '#F2F2F2'; ctx.fillRect(0, 0, 180, 180);
-    ctx.fillStyle = '#FF0C1F'; ctx.font = '13px Inter, sans-serif';
-    ctx.textAlign = 'center'; ctx.fillText('Erro no upload', 90, 90);
+  function showQRError(msg) {
+    qrLoading.style.display = 'none';
+    qrImg.style.display = 'none';
+    const p = document.createElement('p');
+    p.textContent = '⚠ ' + msg;
+    p.style.cssText = 'font-size:12px;color:#888;width:200px;text-align:center;padding:20px 0;';
+    qrImg.parentNode.appendChild(p);
   }
 
   function resetToPreview() {
     showState('preview');
     if (resultTimeout) { clearTimeout(resultTimeout); resultTimeout = null; }
   }
-
-  socket.on('photo-ready', ({ total }) => {
-    photoCountEl.textContent = `Foto ${total} do evento`;
-  });
 
   function loadFrame() {
     if (!sessionCode) return;
