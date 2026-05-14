@@ -44,6 +44,7 @@
   const resetBar      = $('reset-bar');
   const captureCanvas = $('capture-canvas');
   const btnDownload   = $('btn-download');
+  const buildInfo     = $('build-info');
 
   /* ── State ── */
   let sessionCode   = null;
@@ -58,11 +59,6 @@
   const savedWidths = { '4:5': '', '16:9': '' };
 
   const RESULT_MS = 12000; // 12s — otimizado para fila
-
-  const RESOLUTIONS = {
-    '4:5':  { w: 1080, h: 1350 }, // Portrait feed (4:5)
-    '16:9': { w: 1920, h: 1080 }, // Landscape (16:9)
-  };
 
   const IDLE_MSGS = [
     '📸 Faça uma pose incrível!',
@@ -117,6 +113,7 @@
     // Init audio on first user interaction
     document.addEventListener('click', () => initAudio(), { once: true });
     document.addEventListener('keydown', () => initAudio(), { once: true });
+    loadBuildInfo();
 
     try {
       const r = await fetch('/api/sony/status');
@@ -143,6 +140,16 @@
     [stateBooting, statePreview, stateResult, stateError].forEach(el => el.classList.add('hidden'));
     ({ booting: stateBooting, preview: statePreview, result: stateResult, error: stateError }[name])
       ?.classList.remove('hidden');
+  }
+
+  async function loadBuildInfo() {
+    try {
+      const resp = await fetch('/api/version', { cache: 'no-store' });
+      const data = await resp.json();
+      if (buildInfo && data.label) buildInfo.textContent = data.label;
+    } catch {
+      if (buildInfo) buildInfo.textContent = 'versão indisponível';
+    }
   }
 
   /* ═══ PERSISTENT SESSION ═══
@@ -390,13 +397,19 @@
     btnDownload.classList.add('hidden');
 
     try {
-      const resp = await fetch('/api/sony/capture', { method: 'POST' });
+      const resp = await fetch('/api/sony/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: sessionCode, aspectRatio })
+      });
       const data = await resp.json();
       if (data.success && data.data) {
-        const url = data.data.image?.url || data.data.url;
-        showResult(url, true);
-        generateQR(url);
-        socket.emit('photo-uploaded', { code: sessionCode, url, thumbnail: data.data.thumb?.url || url });
+        const imageUrl = data.data.imageUrl;
+        const pageUrl = data.data.pageUrl || imageUrl;
+        showResult(imageUrl, true);
+        generateQR(pageUrl);
+        setupDownloadUrl(data.data.downloadUrl || imageUrl);
+        socket.emit('photo-uploaded', { code: sessionCode, url: imageUrl, thumbnail: imageUrl });
       } else { showState('preview'); }
     } catch { showState('preview'); }
   }
@@ -404,66 +417,54 @@
   async function doWebcamCapture() {
     triggerFlash();
 
-    const res = RESOLUTIONS[aspectRatio];
-    captureCanvas.width  = res.w;
-    captureCanvas.height = res.h;
+    const w = video.videoWidth || video.offsetWidth || 1920;
+    const h = video.videoHeight || video.offsetHeight || 1080;
+    captureCanvas.width  = w;
+    captureCanvas.height = h;
     const ctx = captureCanvas.getContext('2d');
-
-    const vW = video.videoWidth  || video.offsetWidth;
-    const vH = video.videoHeight || video.offsetHeight;
-    const canvasAspect = res.w / res.h;
-    const videoAspect  = vW / vH;
-
-    let drawW, drawH, offX, offY;
-    if (videoAspect > canvasAspect) {
-      drawH = res.h; drawW = res.h * videoAspect;
-      offX = (res.w - drawW) / 2; offY = 0;
-    } else {
-      drawW = res.w; drawH = res.w / videoAspect;
-      offX = 0; offY = (res.h - drawH) / 2;
-    }
 
     ctx.save();
     ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
-    ctx.translate(res.w, 0);
+    ctx.translate(w, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, offX, offY, drawW, drawH);
+    ctx.drawImage(video, 0, 0, w, h);
     ctx.restore();
     ctx.filter = 'none';
 
-    if (frameOverlay.classList.contains('loaded') && frameOverlay.naturalWidth > 0) {
-      ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
-    }
-
-    const dataUrl = captureCanvas.toDataURL('image/png');
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.97);
     lastDataUrl = dataUrl;
 
     showResult(dataUrl, true);
-    setupDownload(dataUrl);
 
     qrBody.textContent = 'Gerando link para compartilhamento…';
-    qrLoader.innerHTML = '<div class="spinner" style="border-color:rgba(0,59,113,.12);border-top-color:#003B71"></div><p style="font-size:12px;color:#666;margin:4px 0 0">Enviando…</p>';
+    qrLoader.innerHTML = '<div class="spinner" style="border-color:rgba(0,59,113,.12);border-top-color:#003B71"></div><p style="font-size:12px;color:#666;margin:4px 0 0">Finalizando…</p>';
     qrLoader.style.display = 'flex';
     qrImg.style.display    = 'none';
+    btnDownload.classList.add('hidden');
 
     try {
-      const resp = await fetch('/api/upload', {
+      const resp = await fetch('/api/photo/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: dataUrl.split(',')[1] })
+        body: JSON.stringify({ image: dataUrl, code: sessionCode, aspectRatio })
       });
       const data = await resp.json();
-      if (data.success && data.data?.url) {
-        const url = data.data.image?.url || data.data.url;
-        generateQR(url);
-        socket.emit('photo-uploaded', { code: sessionCode, url, thumbnail: data.data.thumb?.url || url });
+      if (data.success && data.data?.imageUrl) {
+        const imageUrl = data.data.imageUrl;
+        const pageUrl = data.data.pageUrl || imageUrl;
+        showResult(imageUrl, true);
+        generateQR(pageUrl);
+        setupDownloadUrl(data.data.downloadUrl || imageUrl);
+        socket.emit('photo-uploaded', { code: sessionCode, url: imageUrl, thumbnail: imageUrl });
       } else {
         qrBody.textContent = 'Upload falhou — salve via botão abaixo.';
         qrLoader.style.display = 'none';
+        setupDownload(dataUrl);
       }
     } catch {
       qrBody.textContent = 'Sem conexão — salve via botão abaixo.';
       qrLoader.style.display = 'none';
+      setupDownload(dataUrl);
     }
   }
 
@@ -505,6 +506,14 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    };
+  }
+
+  function setupDownloadUrl(url) {
+    if (!url) return;
+    btnDownload.classList.remove('hidden');
+    btnDownload.onclick = () => {
+      window.open(url, '_blank', 'noopener');
     };
   }
 

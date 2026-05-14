@@ -368,7 +368,7 @@
       sonyControls.innerHTML = '';
 
       // Priority order for display
-      const order = ['iso', 'aperture', 'f-number', 'shutter', 'shutter-speed', 'ev', 'exposure-compensation', 'wb', 'white-balance', 'focus', 'flash', 'metering', 'drive', 'quality', 'effect'];
+      const order = ['iso', 'aperture', 'f-number', 'shutter', 'shutter-speed', 'ev', 'exposure-compensation', 'file-format', 'image-quality', 'image-size', 'wb', 'white-balance', 'focus', 'flash', 'metering', 'drive', 'quality', 'effect'];
 
       for (const key of order) {
         const cfg = configs[key];

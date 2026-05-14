@@ -3,13 +3,12 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const multer = require('multer');
-const { exec, spawn } = require('child_process');
-const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const { ServerManager } = require('@alpha-sdk/api');
 const { AlphaSDKClient } = require('@alpha-sdk/client');
-const execAsync = promisify(exec);
+const pkg = require('./package.json');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,11 +16,18 @@ const io = new Server(server, { maxHttpBufferSize: 20e6 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const sessions = new Map();
+const APP_UPDATED_AT = '2026-05-13T22:33:22-03:00';
+const PHOTO_DIRS = {
+  uploads: path.join(__dirname, 'public', 'uploads'),
+  original: path.join(__dirname, 'public', 'uploads', 'original'),
+  final: path.join(__dirname, 'public', 'uploads', 'final'),
+};
+const SONY_SLOT = 1;
 
 app.use(express.static('public'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+app.use('/uploads', express.static(PHOTO_DIRS.uploads));
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -32,28 +38,225 @@ function generateCode() {
   return code;
 }
 
+function ensurePhotoDirs() {
+  Object.values(PHOTO_DIRS).forEach(dir => fs.mkdirSync(dir, { recursive: true }));
+}
+
+function getBaseUrl(req) {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  return `${protocol}://${req.get('host')}`;
+}
+
+function publicUploadUrl(req, folder, filename) {
+  return `${getBaseUrl(req)}/uploads/${folder}/${encodeURIComponent(filename)}`;
+}
+
+function buildPhotoUrls(req, finalFilename, originalFilename = null) {
+  return {
+    imageUrl: publicUploadUrl(req, 'final', finalFilename),
+    pageUrl: `${getBaseUrl(req)}/photo/${encodeURIComponent(finalFilename)}`,
+    downloadUrl: `${getBaseUrl(req)}/download/${encodeURIComponent(finalFilename)}`,
+    originalUrl: originalFilename ? publicUploadUrl(req, 'original', originalFilename) : null,
+  };
+}
+
+function getSessionFrame(code, aspectRatio) {
+  const session = sessions.get(code);
+  if (!session) return null;
+  const key = aspectRatio === '16:9' ? 'frame16x9' : 'frame4x5';
+  const frame = session[key];
+  if (!frame?.data) return null;
+  return Buffer.from(frame.data, 'base64');
+}
+
+function decodeDataImage(image) {
+  const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+  return Buffer.from(base64Data, 'base64');
+}
+
+function safeBasename(value, fallback) {
+  return path.basename(value || fallback).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function fileKey(file) {
+  const contentId = file.content_id ?? file.contentId;
+  const fileId = file.file_id ?? file.fileId;
+  return `${contentId}:${fileId}`;
+}
+
+function getFileIds(file) {
+  return {
+    contentId: file.content_id ?? file.contentId,
+    fileId: file.file_id ?? file.fileId ?? 0,
+  };
+}
+
+function isLikelyJpeg(file) {
+  return /\.(jpe?g)$/i.test(file.file_path || file.name || '');
+}
+
+function fileTimestamp(file) {
+  const parts = [
+    file.creation_year,
+    file.creation_month,
+    file.creation_day,
+    file.creation_hour,
+    file.creation_minute,
+    file.creation_second,
+  ];
+  if (parts.some(v => v === undefined || v === null)) return 0;
+  return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]).getTime();
+}
+
+function chooseBestPhoto(files, previousKeys = new Set()) {
+  const candidates = (files || [])
+    .filter(file => getFileIds(file).contentId !== undefined)
+    .filter(file => !/\.(arw|mp4|mov)$/i.test(file.file_path || ''));
+
+  const newFiles = candidates.filter(file => !previousKeys.has(fileKey(file)));
+  const pool = newFiles.length ? newFiles : candidates;
+
+  return pool
+    .slice()
+    .sort((a, b) => {
+      const jpegScore = Number(isLikelyJpeg(b)) - Number(isLikelyJpeg(a));
+      if (jpegScore) return jpegScore;
+      const timeScore = fileTimestamp(b) - fileTimestamp(a);
+      if (timeScore) return timeScore;
+      return (b.file_size || 0) - (a.file_size || 0);
+    })[0];
+}
+
+async function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForStableFile(candidates, sinceMs, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastPath = null;
+  let lastSize = -1;
+  let stableSince = 0;
+
+  while (Date.now() < deadline) {
+    const currentCandidates = typeof candidates === 'function' ? candidates() : candidates;
+    const existing = currentCandidates
+      .filter(Boolean)
+      .filter(filePath => fs.existsSync(filePath))
+      .map(filePath => ({ filePath, stat: fs.statSync(filePath) }))
+      .filter(({ stat }) => stat.size > 0 && stat.mtimeMs >= sinceMs - 1000)
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+    if (existing.length) {
+      const current = existing[0];
+      if (current.filePath === lastPath && current.stat.size === lastSize) {
+        if (!stableSince) stableSince = Date.now();
+        if (Date.now() - stableSince >= 700) return current.filePath;
+      } else {
+        lastPath = current.filePath;
+        lastSize = current.stat.size;
+        stableSince = 0;
+      }
+    }
+
+    await wait(300);
+  }
+
+  throw new Error('Sony download did not finish in time');
+}
+
+async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
+  ensurePhotoDirs();
+
+  const targetRatio = aspectRatio === '16:9' ? 16 / 9 : 4 / 5;
+  const metadata = await sharp(input).metadata();
+  if (!metadata.width || !metadata.height) throw new Error('Invalid image metadata');
+
+  let sourceWidth = metadata.width;
+  let sourceHeight = metadata.height;
+  if ([5, 6, 7, 8].includes(metadata.orientation)) {
+    sourceWidth = metadata.height;
+    sourceHeight = metadata.width;
+  }
+
+  const source = sharp(input).rotate();
+  const sourceRatio = sourceWidth / sourceHeight;
+  let width;
+  let height;
+
+  if (sourceRatio > targetRatio) {
+    height = sourceHeight;
+    width = Math.round(height * targetRatio);
+  } else {
+    width = sourceWidth;
+    height = Math.round(width / targetRatio);
+  }
+
+  let pipeline = source.resize(width, height, { fit: 'cover', position: 'centre', withoutEnlargement: true });
+  const frameBuffer = getSessionFrame(code, aspectRatio);
+
+  if (frameBuffer) {
+    const frame = await sharp(frameBuffer)
+      .resize(width, height, { fit: 'fill' })
+      .png()
+      .toBuffer();
+    pipeline = pipeline.composite([{ input: frame, left: 0, top: 0 }]);
+  }
+
+  const finalFilename = `globo_final_${Date.now()}_${aspectRatio.replace(':', 'x')}.jpg`;
+  const finalPath = path.join(PHOTO_DIRS.final, finalFilename);
+
+  await pipeline
+    .jpeg({ quality: 97, chromaSubsampling: '4:4:4' })
+    .withMetadata()
+    .toFile(finalPath);
+
+  return { finalFilename, finalPath, width, height };
+}
+
+function renderDownloadPage(filename) {
+  const safeName = safeBasename(filename, 'foto.jpg');
+  const imagePath = `/uploads/final/${encodeURIComponent(safeName)}`;
+  const downloadPath = `/download/${encodeURIComponent(safeName)}`;
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baixar foto Globo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #06121f; color: #fff; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    main { width: min(100%, 520px); display: flex; flex-direction: column; gap: 18px; align-items: center; }
+    img { width: 100%; height: auto; border: 10px solid #fff; border-radius: 8px; box-shadow: 0 24px 80px rgba(0,0,0,.45); background: #fff; }
+    h1 { font-size: 24px; line-height: 1.15; margin: 4px 0 0; text-align: center; }
+    p { color: rgba(255,255,255,.72); font-size: 14px; line-height: 1.5; margin: 0; text-align: center; }
+    a { width: 100%; display: inline-flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; background: #fff; color: #003B71; text-decoration: none; font-weight: 800; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="${imagePath}" alt="Sua foto">
+    <h1>Sua foto está pronta</h1>
+    <p>Toque no botão para baixar a versão em alta qualidade com a moldura.</p>
+    <a href="${downloadPath}">Baixar em alta qualidade</a>
+  </main>
+</body>
+</html>`;
+}
+
 /* ── REST API ─────────────────────────────────────────── */
 
 // Upload photo locally to avoid ImgBB compression
 app.post('/api/upload', async (req, res) => {
   try {
-    const { image } = req.body;
+    const { image, code, aspectRatio = '4:5' } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
-    const uploadsDir = path.join(__dirname, 'public', 'uploads');
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-    const filename = `globo_foto_${Date.now()}.jpg`;
-    const filepath = path.join(uploadsDir, filename);
-
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
-    const buffer = Buffer.from(base64Data, 'base64');
-    fs.writeFileSync(filepath, buffer);
-
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const url = `${protocol}://${req.get('host')}/uploads/${filename}`;
+    const inputBuffer = decodeDataImage(image);
+    const { finalFilename } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
+    const urls = buildPhotoUrls(req, finalFilename);
     
-    res.json({ success: true, data: { url, image: { url } } });
+    res.json({ success: true, data: { ...urls, url: urls.imageUrl, image: { url: urls.imageUrl } } });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
@@ -95,12 +298,53 @@ app.get('/api/photos/:code', (req, res) => {
   res.json({ photos: session.photos || [] });
 });
 
+app.get('/api/version', (req, res) => {
+  const date = new Date(APP_UPDATED_AT);
+  res.json({
+    version: pkg.version,
+    updatedAt: APP_UPDATED_AT,
+    label: `v${pkg.version} • ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+  });
+});
+
+app.post('/api/photo/finalize', async (req, res) => {
+  try {
+    const { image, code, aspectRatio = '4:5' } = req.body;
+    if (!image) return res.status(400).json({ error: 'No image data' });
+
+    const inputBuffer = decodeDataImage(image);
+    const { finalFilename } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
+    const urls = buildPhotoUrls(req, finalFilename);
+
+    res.json({ success: true, data: urls });
+  } catch (err) {
+    console.error('Finalize photo error:', err);
+    res.status(500).json({ error: err.message || 'Finalize failed' });
+  }
+});
+
+app.get('/photo/:filename', (req, res) => {
+  const filename = safeBasename(req.params.filename, '');
+  const finalPath = path.join(PHOTO_DIRS.final, filename);
+  if (!filename || !fs.existsSync(finalPath)) return res.status(404).send('Foto não encontrada');
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(renderDownloadPage(filename));
+});
+
+app.get('/download/:filename', (req, res) => {
+  const filename = safeBasename(req.params.filename, '');
+  const finalPath = path.join(PHOTO_DIRS.final, filename);
+  if (!filename || !fs.existsSync(finalPath)) return res.status(404).send('Foto não encontrada');
+  res.download(finalPath, `globo_foto_${Date.now()}.jpg`);
+});
+
 /* ── SONY CAMERA REMOTE API INTEGRATION ────────────────── */
 
 const sonyServer = new ServerManager({ port: 8080 });
 const sonyClient = new AlphaSDKClient({ environment: 'http://localhost:8080' });
 let sonyCameraId = null;
 let sonyCapturing = false;
+let sonyQualityConfiguredFor = null;
 
 // Initialize Sony API Server in the background
 sonyServer.start().catch(err => console.error('Error starting Sony SDK server:', err));
@@ -121,6 +365,7 @@ app.get('/api/sony/status', async (req, res) => {
       });
       await sonyClient.properties.setPriorityKey({ cameraId: sonyCameraId, setting: "pc-remote" });
     }
+    await trySetBestSonyQuality(sonyCameraId);
     res.json({ available: true, camera: camera.model });
   } catch (err) {
     console.error('Sony status error:', err);
@@ -158,37 +403,60 @@ app.post('/api/sony/capture', async (req, res) => {
   sonyCapturing = true;
 
   try {
+    const { code, aspectRatio = '4:5' } = req.body || {};
+    ensurePhotoDirs();
+
+    const beforeList = await sonyClient.sdCard.list({ cameraId: sonyCameraId, slotNumber: SONY_SLOT });
+    const beforeFiles = beforeList.files || beforeList.data?.files || [];
+    const beforeKeys = new Set(beforeFiles.map(fileKey));
+
     // Fire the shutter
     await sonyClient.actions.shutter({ cameraId: sonyCameraId });
 
-    // Wait briefly for the camera to write the file
-    await new Promise(r => setTimeout(r, 1500));
+    // Wait for the camera to write the file and expose it through the SDK.
+    await wait(1200);
     
-    // Get latest file from SD card
-    const { files } = await sonyClient.sdCard.list({ cameraId: sonyCameraId, slotNumber: 1 });
-    if (!files || files.length === 0) throw new Error('No files found on SD card');
-    
-    const latest = files[files.length - 1];
+    let latest = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const list = await sonyClient.sdCard.list({ cameraId: sonyCameraId, slotNumber: SONY_SLOT });
+      const files = list.files || list.data?.files || [];
+      latest = chooseBestPhoto(files, beforeKeys);
+      if (latest && !beforeKeys.has(fileKey(latest))) break;
+      await wait(500);
+    }
+    if (!latest || beforeKeys.has(fileKey(latest))) throw new Error('No new photo found on SD card');
 
-    // Download photo using Alpha SDK ServerManager direct HTTP endpoint
-    // We fetch it from the server since the client download() is meant for direct disk write
-    const downloadRes = await fetch(`http://localhost:8080/api/cameras/${sonyCameraId}/sd-card/slots/1/files/${latest.fileId}/content`);
-    const buffer = await downloadRes.arrayBuffer();
-    const imageData = Buffer.from(buffer).toString('base64');
+    const { contentId, fileId } = getFileIds(latest);
+    if (contentId === undefined || fileId === undefined) throw new Error('Sony file id not found');
 
-    // Save locally instead of ImgBB to preserve full 24MP quality
-    const uploadsDir = path.join(__dirname, 'public', 'uploads');
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+    const downloadStartedAt = Date.now();
+    const cameraBaseName = safeBasename(latest.file_path, `sony_${Date.now()}.jpg`);
+    const expectedPath = path.join(PHOTO_DIRS.original, cameraBaseName);
 
-    const filename = `sony_alta_${Date.now()}.jpg`;
-    const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, Buffer.from(buffer));
+    await sonyClient.sdCard.download({
+      cameraId: sonyCameraId,
+      slotNumber: SONY_SLOT,
+      contentId,
+      fileId,
+      body: { save_path: PHOTO_DIRS.original },
+    });
 
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const url = `${protocol}://${req.get('host')}/uploads/${filename}`;
+    const downloadedPath = await waitForStableFile(() => {
+      const files = fs.existsSync(PHOTO_DIRS.original)
+        ? fs.readdirSync(PHOTO_DIRS.original).map(name => path.join(PHOTO_DIRS.original, name))
+        : [];
+      return [expectedPath, ...files];
+    }, downloadStartedAt);
+
+    const originalFilename = `sony_original_${Date.now()}_${safeBasename(downloadedPath, cameraBaseName)}`;
+    const originalPath = path.join(PHOTO_DIRS.original, originalFilename);
+    if (downloadedPath !== originalPath) fs.copyFileSync(downloadedPath, originalPath);
+
+    const { finalFilename } = await composeFinalPhoto(originalPath, { code, aspectRatio });
+    const urls = buildPhotoUrls(req, finalFilename, originalFilename);
 
     sonyCapturing = false;
-    res.json({ success: true, data: { url, image: { url } } });
+    res.json({ success: true, data: urls });
   } catch (err) {
     sonyCapturing = false;
     console.error('Sony capture error:', err.message);
@@ -196,14 +464,44 @@ app.post('/api/sony/capture', async (req, res) => {
   }
 });
 
-const SONY_PROPERTIES = ['iso', 'f-number', 'shutter-speed', 'white-balance', 'exposure-compensation'];
+const SONY_PROPERTIES = ['iso', 'f-number', 'shutter-speed', 'white-balance', 'exposure-compensation', 'file-format', 'image-quality', 'image-size'];
 const SONY_LABELS = {
   'iso': 'ISO', 
   'f-number': 'Abertura (f/)', 
   'shutter-speed': 'Velocidade', 
   'white-balance': 'Bal. Branco',
-  'exposure-compensation': 'Compensação EV'
+  'exposure-compensation': 'Compensação EV',
+  'file-format': 'Formato',
+  'image-quality': 'Qualidade',
+  'image-size': 'Tamanho'
 };
+
+async function trySetBestSonyQuality(cameraId) {
+  if (sonyQualityConfiguredFor === cameraId) return;
+
+  const preferences = {
+    'file-format': ['jpeg', 'jpg', 'jpeg + raw', 'raw & jpeg'],
+    'image-quality': ['extra fine', 'xfine', 'fine'],
+    'image-size': ['large', 'l:'],
+  };
+
+  for (const [propertyName, preferredTerms] of Object.entries(preferences)) {
+    try {
+      const propData = await sonyClient.properties.get({ cameraId, propertyName });
+      const values = propData.data?.supportedValues || [];
+      const current = String(propData.data?.value || '').toLowerCase();
+      const best = values.find(value => preferredTerms.some(term => String(value).toLowerCase().includes(term)));
+
+      if (best && !preferredTerms.some(term => current.includes(term))) {
+        await sonyClient.properties.set({ cameraId, propertyName, value: best.toString() });
+      }
+    } catch (err) {
+      // Some bodies/firmware do not expose these settings over USB.
+    }
+  }
+
+  sonyQualityConfiguredFor = cameraId;
+}
 
 app.get('/api/sony/all-configs', async (req, res) => {
   if (!sonyCameraId) return res.json({});

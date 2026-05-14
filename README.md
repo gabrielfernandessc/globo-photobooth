@@ -4,19 +4,19 @@ Totem de foto para eventos corporativos com controle remoto, moldura customizada
 
 ## Funcionalidades
 
-- 📸 **Preview em tempo real** — Câmera Sony A7III via Imaging Edge Desktop
+- 📸 **Preview em tempo real** — Sony A7III via Alpha SDK nativo ou Webcam fallback
 - 📱 **Controle remoto** — Opere a distância pelo celular
-- 🔗 **Pareamento por código** — Conecte o celular ao totem com um código de 6 dígitos
+- 🔗 **Pareamento por código** — Conecte o celular ao totem com um código de 4 caracteres
 - 🖼️ **Moldura customizada** — Upload de frame PNG (4:5 Instagram e 16:9)
 - ⏱️ **Countdown ajustável** — 3, 5 ou 10 segundos
-- 📲 **QR Code** — Pessoa escaneia e acessa a foto instantaneamente
-- ☁️ **Upload gratuito** — Fotos hospedadas no ImgBB (100% grátis)
+- 📲 **QR Code** — Pessoa escaneia e acessa uma página de download em alta qualidade
+- 🧩 **Composição local** — Foto final com moldura gerada no backend via Sharp, sem ImgBB
 
 ## Setup rápido
 
 ### 1. Pré-requisitos
 - Node.js 18+
-- Conta no [ImgBB](https://api.imgbb.com/) (grátis) para obter a API key
+- Para captura Sony: Mac/host local com câmera conectada via USB
 
 ### 2. Configuração
 ```bash
@@ -26,9 +26,7 @@ cd globo-photobooth
 # Instale as dependências
 npm install
 
-# Configure a API key do ImgBB
-cp .env.example .env
-# Edite o .env e coloque sua IMGBB_API_KEY
+# Sem ImgBB: as fotos finais são salvas em public/uploads/final
 ```
 
 ### 3. Executar localmente
@@ -40,7 +38,7 @@ npm start
 ### 4. No evento
 1. **Computador**: Abra `http://localhost:3000/display.html` (fullscreen F11)
 2. **Celular**: Acesse `http://<IP-DO-COMPUTADOR>:3000/control.html`
-3. Digite o código de 6 dígitos exibido na tela
+3. Digite o código de 4 caracteres exibido na tela
 4. Configure a moldura e comece a tirar fotos!
 
 ## Deploy no Render.com (grátis)
@@ -50,8 +48,9 @@ npm start
 3. New → Web Service → conecte o repositório
 4. Build Command: `npm install`
 5. Start Command: `node server.js`
-6. Adicione a variável de ambiente `IMGBB_API_KEY`
-7. Deploy!
+6. Deploy!
+
+> No Render, o app funciona em modo Webcam. A captura Sony depende da câmera conectada fisicamente ao Mac/host local.
 
 > **Dica**: Use o [UptimeRobot](https://uptimerobot.com) (grátis) para pingar sua URL a cada 5 minutos e evitar cold starts.
 
@@ -81,9 +80,9 @@ globo-photobooth/
 |:---|:---|
 | Node.js + Express | Servidor web |
 | Socket.IO | Comunicação em tempo real |
-| Canvas API | Composição foto + moldura |
-| ImgBB API | Hospedagem de imagens (grátis) |
-| QRCode.js | Geração de QR Code |
+| Canvas API | Captura Webcam em alta resolução |
+| Sharp | Composição da foto final com moldura |
+| QR Server API | Geração da imagem do QR Code |
 
 ## Design
 
