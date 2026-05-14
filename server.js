@@ -174,7 +174,7 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
   const width = metadata.width;
   const height = metadata.height;
 
-  const source = sharp(input).rotate();
+  const source = sharp(input).rotate().flop();
   const frameBuffer = getSessionFrame(code, aspectRatio);
 
   let pipeline = source;
