@@ -147,7 +147,7 @@ html, body {
   background: #000;
 }
 /* ring-shadow = borda branca (white border como fotototem-ref) */
-.stage-card[data-ratio="4:5"]  { aspect-ratio: 9/16; }
+.stage-card[data-ratio="4:5"]  { aspect-ratio: 4/5; }
 .stage-card[data-ratio="16:9"] { aspect-ratio: 16/9; }
 
 /* Câmera: position absolute, preenche tudo, sem distorcer (object-cover) */
@@ -161,13 +161,11 @@ html, body {
   transform: scaleX(-1); /* espelho para selfie natural */
 }
 
-/* Frame overlay: idêntico ao fotototem-ref:
-   className="absolute top-0 left-0 w-full h-full object-cover z-10 pointer-events-none"
-   object-cover funciona SEM cortar quando o PNG tem o mesmo aspect ratio do container */
+/* Frame overlay: matches canvas rendering exactly */
 #frame-overlay {
   position: absolute;
   top: 0; left: 0; width: 100%; height: 100%;
-  object-fit: cover;    /* igual ao fotototem-ref */
+  object-fit: fill; /* force stretch to match container, exactly like ctx.drawImage */
   pointer-events: none;
   z-index: 10;
   opacity: 0;

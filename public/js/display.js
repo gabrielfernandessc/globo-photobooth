@@ -59,8 +59,8 @@
   const RESULT_MS = 12000; // 12s — otimizado para fila
 
   const RESOLUTIONS = {
-    '4:5':  { w: 1080, h: 1920 }, // Vertical (9:16)
-    '16:9': { w: 1920, h: 1080 }, // Horizontal (16:9)
+    '4:5':  { w: 1080, h: 1350 }, // Portrait feed (4:5)
+    '16:9': { w: 1920, h: 1080 }, // Landscape (16:9)
   };
 
   const IDLE_MSGS = [
