@@ -515,9 +515,7 @@
     // Aplica os mesmos filtros do preview para o "Save State" ser idêntico
     ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     
-    // Espelha e desenha com o crop calculado
-    ctx.translate(targetW, 0);
-    ctx.scale(-1, 1);
+    // Desenha com o crop calculado (sem espelhar para que textos fiquem legíveis)
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
     ctx.restore();
 
