@@ -165,7 +165,7 @@ async function waitForStableFile(candidates, sinceMs, timeoutMs = 30000) {
   throw new Error('Sony download did not finish in time');
 }
 
-async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
+async function composeFinalPhoto(input, { code, aspectRatio = '3:4', filters = {} }) {
   ensurePhotoDirs();
 
   const targetRatio = aspectRatio === '4:3' ? 4 / 3 : 3 / 4;
@@ -180,6 +180,22 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
   }
 
   const source = sharp(input).rotate();
+  
+  // Aplica filtros via Sharp (muito mais qualidade que no navegador)
+  // brightness: default 100 -> 1.0
+  // saturation: default 100 -> 1.0
+  // Sharp não tem contrast direto no modulate, usamos linear ou levels
+  const b = (filters.brightness || 100) / 100;
+  const s = (filters.saturation || 100) / 100;
+  const c = (filters.contrast || 100) / 100;
+
+  let processed = source.modulate({ brightness: b, saturation: s });
+  
+  // Ajuste de contraste aproximado via linear (slope, intercept)
+  if (c !== 1) {
+    processed = processed.linear(c, -(0.5 * c) + 0.5);
+  }
+
   const sourceRatio = sourceWidth / sourceHeight;
   let cropWidth;
   let cropHeight;
@@ -198,15 +214,12 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
   const frameBuffer = getSessionFrame(code, aspectRatio);
   if (frameBuffer) {
     const frameMeta = await sharp(frameBuffer).metadata();
-    // Se a moldura for maior que a foto cortada, usamos o tamanho da moldura como alvo
     if (frameMeta.width > targetWidth || frameMeta.height > targetHeight) {
       targetWidth = frameMeta.width;
       targetHeight = frameMeta.height;
     }
   }
 
-  // Garantir uma resolução mínima para "Alta Qualidade" (ex: 1600px de altura)
-  // Isso evita que fotos de webcam fiquem minúsculas/pixeladas ao baixar no celular
   const MIN_HEIGHT = 1600;
   if (targetHeight < MIN_HEIGHT) {
     const factor = MIN_HEIGHT / targetHeight;
@@ -214,13 +227,12 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
     targetHeight = MIN_HEIGHT;
   }
 
-  let pipeline = source.resize(targetWidth, targetHeight, { 
+  let pipeline = processed.resize(targetWidth, targetHeight, { 
     fit: 'cover', 
     position: 'centre', 
     kernel: sharp.kernel.lanczos3 
   });
 
-  // Aplica nitidez se houver upscale, para manter a sensação de "foco" do preview
   if (targetHeight > cropHeight) {
     pipeline = pipeline.sharpen({ sigma: 1.0 });
   }
@@ -358,11 +370,11 @@ app.get('/api/version', (req, res) => {
 
 app.post('/api/photo/finalize', async (req, res) => {
   try {
-    const { image, code, aspectRatio = '3:4' } = req.body;
+    const { image, code, aspectRatio = '3:4', filters = {} } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     const inputBuffer = decodeDataImage(image);
-    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
+    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio, filters });
     const urls = buildPhotoUrls(req, finalFilename);
 
     res.json({ success: true, data: { ...urls, meta: { ...meta, inputBytes: inputBuffer.length } } });

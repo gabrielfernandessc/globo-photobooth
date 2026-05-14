@@ -483,17 +483,22 @@
     const h = video.videoHeight || 1080;
     captureCanvas.width  = w;
     captureCanvas.height = h;
-    const ctx = captureCanvas.getContext('2d');
+    const ctx = captureCanvas.getContext('2d', { alpha: false });
+
+    // Configurações para máxima qualidade de captura do canvas
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     ctx.save();
-    ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
+    // Capturamos SEM filtros do navegador (que são de baixa qualidade)
+    // Os filtros serão aplicados no servidor via Sharp
     ctx.translate(w, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, w, h);
     ctx.restore();
-    ctx.filter = 'none';
 
-    const dataUrl = captureCanvas.toDataURL('image/jpeg', 1.0);
+    // Captura em PNG (sem perdas) para processar no servidor
+    const dataUrl = captureCanvas.toDataURL('image/png');
     lastDataUrl = dataUrl;
     setDiagnostics({
       capture: `${w}x${h}`,
@@ -514,7 +519,12 @@
       const resp = await fetch('/api/photo/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: dataUrl, code: sessionCode, aspectRatio })
+        body: JSON.stringify({ 
+          image: dataUrl, 
+          code: sessionCode, 
+          aspectRatio,
+          filters: camFilters // Enviamos os filtros para o servidor
+        })
       });
       const data = await resp.json();
       if (data.success && data.data?.imageUrl) {
