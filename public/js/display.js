@@ -309,9 +309,9 @@
     if (cmd.zoom       !== undefined) camZoom = cmd.zoom;
     const f = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     video.style.filter      = f;
-    video.style.transform   = `scaleX(-1) scale(${camZoom})`;
+    video.style.transform   = `scale(${camZoom})`;
     gphotoFeed.style.filter = f;
-    gphotoFeed.style.transform = `scaleX(-1) scale(${camZoom})`;
+    gphotoFeed.style.transform = `scale(${camZoom})`;
   }
 
   /* ── QR Code via API (no library) ── */
