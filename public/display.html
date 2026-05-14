@@ -16,8 +16,8 @@
     <div class="state state-booting" id="state-booting">
       <div class="boot-logo">
         <svg width="48" height="48" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500ZM250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="#003B71"/>
-          <circle cx="250" cy="250" r="85.714" fill="#003B71"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500ZM250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="#05A6FF"/>
+          <circle cx="250" cy="250" r="85.714" fill="#05A6FF"/>
         </svg>
       </div>
       <div class="spinner"></div>
@@ -33,23 +33,23 @@
         <div class="header-brand">
           <div class="header-logo-wrap">
             <svg width="32" height="32" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500ZM250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="#003B71"/>
-              <circle cx="250" cy="250" r="85.714" fill="#003B71"/>
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500ZM250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="#05A6FF"/>
+              <circle cx="250" cy="250" r="85.714" fill="#05A6FF"/>
             </svg>
           </div>
           <div class="header-title">
-            <h1>Fotoboarding</h1>
+            <h1 id="header-title">Fotoboarding</h1>
             <span class="subtitle">Globo &bull; Uso interno</span>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
-          <span class="header-photo-count" id="photo-count-header">📷 0</span>
-          <div class="header-code-pill">
+          <div class="header-photo-count" id="header-photo-count" aria-label="Contador de fotos">0 fotos</div>
+          <div class="header-code-pill" aria-label="Código da sessão">
             <div class="header-status-dot" id="status-dot"></div>
             <span class="code-label">Código</span>
             <span class="code-val" id="session-code">----</span>
           </div>
-          <button class="fs-btn" onclick="toggleFullscreen()" title="Tela cheia">
+          <button class="fs-btn" id="btn-fullscreen" title="Tela Cheia" aria-label="Ativar tela cheia">
             <svg id="fs-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
               <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
@@ -61,14 +61,6 @@
       <!-- Main: preview + text -->
       <div class="preview-main">
 
-        <!--
-          CAMERA STAGE — estrutura idêntica ao fotototem-ref/CameraFeed.tsx:
-          - .stage-wrap: resizable, tem o tamanho controlável
-          - .stage-card: overflow:hidden + aspect-ratio (clipa câmera E frame)
-          - video/gphoto-feed: position:absolute inset:0 object-cover (preenche sem distorcer)
-          - #frame-overlay: position:absolute inset:0 object-cover z-10 (fica sobre câmera,
-            escala proporcional). Frame PNG deve ter o mesmo aspect ratio do modo selecionado.
-        -->
         <div class="stage-wrap" id="stage-wrap">
           <div class="stage-card" id="stage-card" data-ratio="3:4">
 
@@ -78,8 +70,7 @@
             <!-- Câmera (gphoto2 MJPEG) -->
             <img id="gphoto-feed" alt="Preview" class="hidden" />
 
-            <!-- Frame overlay — DENTRO do overflow:hidden, object-cover,
-                 exatamente como fotototem-ref. O PNG deve ter o mesmo ratio do container. -->
+            <!-- Frame overlay -->
             <img id="frame-overlay" alt="" />
 
             <!-- Mode badge -->
@@ -91,7 +82,7 @@
             <!-- Idle text overlay -->
             <div class="preview-overlay-text" id="overlay-text">📸 Faça uma pose incrível!</div>
 
-            <!-- Countdown — igual ao fotototem-ref -->
+            <!-- Countdown -->
             <div class="countdown-overlay hidden" id="countdown-overlay">
               <span class="hint-text">Foto em</span>
               <div class="countdown-number" id="countdown-number">3</div>
@@ -99,19 +90,20 @@
 
             <!-- Flash -->
             <div class="flash-overlay hidden" id="flash-overlay"></div>
+            <div class="camera-instruction-overlay">Sorria para a câmera :)</div>
           </div>
         </div>
 
-        <!-- Text panel -->
+        <!-- Direita: Texto -->
         <div class="preview-text-panel">
           <div class="sparkle-pill">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            Registre sua presença com uma foto especial
+            Foto especial da Globo
           </div>
-          <h2 class="preview-headline">Que bom<br>ter você aqui.</h2>
-          <p class="preview-subtext">Posicione-se em frente à câmera e aguarde a contagem regressiva para registrar esse momento com a Globo.</p>
-          <p class="preview-hint">💡 Centralize-se no quadro antes da captura.</p>
-          <div id="status-text" style="font-size:13px;color:#888">Aguardando controle…</div>
+          <h1 class="preview-headline">Que bom ter você aqui.</h1>
+          <p class="preview-subtext">Centralize-se no quadro e aguarde a contagem regressiva. A gente registra esse momento com você.</p>
+          <p class="preview-hint">Dica: mantenha o rosto visível e fique confortável no enquadramento.</p>
+          <div id="status-text" class="status-text">Aguardando liberação...</div>
         </div>
       </div>
     </div>

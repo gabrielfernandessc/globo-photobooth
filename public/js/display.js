@@ -40,7 +40,7 @@
   const qrLoader      = $('qr-loader');
   const qrBody        = $('qr-body');
   const photoCountEl  = $('photo-count');
-  const photoCountHdr = $('photo-count-header');
+  const photoCountHdr = $('header-photo-count');
   const resetBar      = $('reset-bar');
   const captureCanvas = $('capture-canvas');
   const btnDownload   = $('btn-download');
@@ -337,18 +337,18 @@
   /* ── Photo counter ── */
   function updatePhotoCount() {
     if (photoCountEl) photoCountEl.textContent = `Foto ${photoTotal} do evento`;
-    if (photoCountHdr) photoCountHdr.textContent = `📷 ${photoTotal}`;
+    if (photoCountHdr) photoCountHdr.textContent = `${photoTotal} fotos`;
   }
 
   /* ═══ SOCKET EVENTS ═══ */
 
   socket.on('controller-connected', () => {
     statusDot.classList.add('connected');
-    $('status-text').textContent = '✓ Controle conectado';
+    $('status-text').textContent = 'Tudo pronto para a foto.';
   });
   socket.on('controller-disconnected', () => {
     statusDot.classList.remove('connected');
-    $('status-text').textContent = 'Aguardando controle…';
+    $('status-text').textContent = 'Aguardando liberação...';
   });
   socket.on('settings-updated', s => {
     if (s.timer) currentTimer = s.timer;
@@ -415,6 +415,8 @@
     capturing = true;
     overlayText.style.opacity = '0';
     countdownOvl.classList.remove('hidden');
+    const statusText = $('status-text');
+    if (statusText) statusText.textContent = 'Preparando o registro...';
 
     for (let i = seconds; i > 0; i--) {
       countdownNum.textContent = String(i);
@@ -560,6 +562,12 @@
   function resetToPreview() {
     if (resultTimeout) { clearTimeout(resultTimeout); resultTimeout = null; }
     showState('preview');
+    const statusText = $('status-text');
+    if (statusText) {
+      statusText.textContent = $('status-dot').classList.contains('connected') 
+        ? 'Tudo pronto para a foto.' 
+        : 'Aguardando liberação...';
+    }
   }
 
   function setupDownload(dataUrl) {

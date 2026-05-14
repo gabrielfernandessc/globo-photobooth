@@ -1,38 +1,52 @@
 /* ══════════════════════════════════════════════════════════
-   DISPLAY.CSS — Globo Photo Booth Totem
-   Estrutura de stage idêntica ao fotototem-ref/CameraFeed.tsx
+   DISPLAY.CSS — Fotoboarding
+   Design baseado no Livro de Marca Globo 2025 v2.0
    ══════════════════════════════════════════════════════════ */
+
+:root {
+  --globo-blue: #05A6FF;
+  --globo-purple: #8800F8;
+  --globo-red: #FF0C1F;
+  --globo-yellow: #FFD006;
+  --black: #000000;
+  --white: #FFFFFF;
+  --black-5: #F2F2F2;
+  --black-25: #C7C8CA;
+  --black-50: #939598;
+  --font-globo: 'Globotipo Corporativa', 'Inter', system-ui, sans-serif;
+  --multicolor-gradient: linear-gradient(90deg, var(--globo-blue) 0%, var(--globo-purple) 33%, var(--globo-red) 66%, var(--globo-yellow) 100%);
+}
 
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body {
   height: 100%; width: 100%;
   overflow: hidden;
-  background: #FFFFFF;
-  color: #333333;
+  background: var(--white);
+  color: var(--black);
   margin: 0; padding: 0;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-globo);
 }
 
 .display-page {
   width: 100vw; height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #FFFFFF;
+  background: var(--white);
   position: relative;
   overflow: hidden;
 }
 
-/* Barra multicolor Globo (fotototem-ref: footer bg-multicolor-bar) */
+/* Barra multicolor Globo */
 .multicolor-bar {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: 12px;
-  background: linear-gradient(90deg,
-    #003B71 0%, #05A6FF 20%, #00C4A7 35%,
-    #86DD00 50%, #FFD100 65%, #FF7A00 80%, #FF0C1F 100%
-  );
+  height: 24px;
+  background: var(--multicolor-gradient);
   z-index: 999;
+}
+@media (min-width: 1440px) {
+  .multicolor-bar { height: 32px; }
 }
 
 /* ════════════════ SHARED ════════════════ */
@@ -40,21 +54,20 @@ html, body {
 .hidden { display: none !important; }
 
 /* ════════════════ BOOTING ════════════════ */
-.state-booting { flex-direction: column; gap: 20px; z-index: 10; }
+.state-booting { flex-direction: column; gap: 20px; z-index: 10; background: var(--white); }
 .boot-logo {
-  background: #fff; border-radius: 50%; padding: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,.3);
+  border-radius: 50%; padding: 12px;
 }
 .spinner {
   width: 52px; height: 52px;
-  border: 3px solid rgba(255,255,255,.15);
-  border-top-color: rgba(255,255,255,.9);
+  border: 3px solid rgba(5,166,255,.15);
+  border-top-color: var(--globo-blue);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.booting-msg { font-size: 20px; font-weight: 700; color: #003B71; margin: 0; }
-.booting-sub  { font-size: 14px; color: #666; margin: 0; }
+.booting-msg { font-size: 20px; font-weight: 700; color: var(--globo-blue); margin: 0; }
+.booting-sub  { font-size: 14px; color: var(--black-50); margin: 0; }
 
 /* ════════════════ PREVIEW ════════════════ */
 .state-preview { flex-direction: column; align-items: stretch; justify-content: flex-start; z-index: 1; }
@@ -62,111 +75,94 @@ html, body {
 /* Header */
 .display-header {
   position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+  height: 72px;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px;
-  background: linear-gradient(to bottom, rgba(255,255,255,0.95) 0%, transparent 100%);
+  padding: 0 clamp(32px, 6vw, 96px);
+  background: var(--white);
 }
+@media (max-width: 768px) {
+  .display-header { padding: 0 24px; }
+}
+
 .header-brand { display: flex; align-items: center; gap: 12px; }
 .header-logo-wrap {
-  background: #fff; border-radius: 50%; padding: 6px;
-  box-shadow: 0 2px 12px rgba(0,0,0,.2);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.header-title h1  { font-size: 17px; font-weight: 700; color: #003B71; margin: 0; line-height: 1.2; }
-.header-title .subtitle { font-size: 11px; color: #666; display: block; }
+.header-title h1  { font-size: 18px; font-weight: 700; color: var(--black); margin: 0; line-height: 1.2; }
+.header-title .subtitle { font-size: 12px; color: var(--black-50); display: block; }
 .header-code-pill {
-  background: #F0F4F8; border: 1px solid #D1DDE8;
-  border-radius: 999px; padding: 6px 14px;
-  display: flex; align-items: center; gap: 8px; color: #003B71; font-size: 12px;
+  display: flex; align-items: center; gap: 8px; color: var(--black); font-size: 14px;
 }
-.header-code-pill .code-label { color: #555; font-size: 11px; }
-.header-code-pill .code-val   { font-size: 18px; font-weight: 800; letter-spacing: .25em; color: #003B71; }
+.header-code-pill .code-label { color: var(--black-50); font-size: 14px; }
+.header-code-pill .code-val   { font-size: 18px; font-weight: 800; letter-spacing: .15em; color: var(--black); }
 .header-status-dot {
   width: 7px; height: 7px; border-radius: 50%;
-  background: rgba(255,255,255,.25); transition: all .3s;
+  background: var(--black-25); transition: all .3s;
 }
 .header-status-dot.connected { background: #4ADE80; box-shadow: 0 0 6px rgba(74,222,128,.5); }
-.fs-btn { background: none; border: none; cursor: pointer; padding: 6px; color: #999; display: flex; align-items: center; transition: color .15s; }
-.fs-btn:hover { color: #003B71; }
+.fs-btn { background: none; border: none; cursor: pointer; padding: 6px; color: var(--black-50); display: flex; align-items: center; transition: color .15s; }
+.fs-btn:hover { color: var(--globo-blue); }
+.fs-btn:focus-visible { outline: 2px solid var(--globo-blue); border-radius: 4px; }
 .header-photo-count {
-  background: #F0F4F8;
-  border: 1px solid #D1DDE8;
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #003B71;
-  letter-spacing: .02em;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--black-50);
 }
 
 /* Main layout: câmera + texto */
 .preview-main {
   position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  gap: 48px; padding: 76px 48px 28px;
+  padding: 72px clamp(32px, 6vw, 96px) clamp(48px, 6vw, 96px); /* 72px for header, padding bottom to clear multicolor bar */
+  display: grid;
+  grid-template-columns: minmax(360px, 520px) minmax(320px, 460px);
+  align-content: center;
+  justify-content: center;
+  gap: clamp(40px, 5vw, 80px);
+}
+@media (max-width: 900px) {
+  .preview-main {
+    grid-template-columns: 1fr;
+    padding: 96px 24px 48px;
+    align-content: start;
+    gap: 32px;
+  }
+  .stage-wrap { order: 3; width: 100% !important; max-width: 100%; }
+  .preview-text-panel { order: 2; }
 }
 
-/* ══════════════════════════════════════════════
-   STAGE — idêntico ao fotototem-ref CameraFeed
-   ══════════════════════════════════════════════
-
-   fotototem-ref:
-   <div className="w-full aspect-[9/16] rounded-mosaic overflow-hidden shadow-xl">
-     <video className="absolute top-0 left-0 w-full h-full object-cover -scale-x-100" />
-     {overlay && <img className="absolute top-0 left-0 w-full h-full object-cover z-10" />}
-   </div>
-
-   Aqui:
-   .stage-wrap → resizable container (como o previewContainerRef do fotototem-ref)
-   .stage-card → aspect-ratio + overflow:hidden + shadow (o div interno do CameraFeed)
-   video / #gphoto-feed → position:absolute inset:0 w:100% h:100% object-cover (mirrored)
-   #frame-overlay → position:absolute inset:0 w:100% h:100% object-cover z-10
-
-   REGRA: o frame PNG enviado pelo controle DEVE ter o mesmo aspect ratio
-   do modo selecionado (3:4 para portrait, 4:3 para landscape).
-   Assim object-cover não corta nada — apenas escala uniformemente.
-   ══════════════════════════════════════════════ */
-
-/* Wrap resizable — como o previewContainerRef do fotototem-ref */
+/* Wrap resizable */
 .stage-wrap {
   flex-shrink: 0;
-  resize: horizontal;    /* arraste a borda direita para redimensionar */
-  overflow: hidden;
-  min-width: 200px;
-  max-width: 52vw;
-  width: min(42vw, 460px); /* largura inicial */
+  width: 100%;
 }
 
-/* Inner card: overflow:hidden + aspect-ratio — clipa tudo proporcionalmente */
+/* Inner card */
 .stage-card {
   position: relative;
   width: 100%;
   overflow: hidden;
-  border-radius: 12px;
-  box-shadow: 0 24px 64px rgba(0, 59, 113, 0.12), 0 8px 24px rgba(0, 59, 113, 0.06);
-  border: 1px solid rgba(0, 59, 113, 0.08);
-  background: #000;
+  border-radius: 15px;
+  background: var(--black-5);
+  border: none;
+  box-shadow: none;
 }
-/* ring-shadow = borda branca (white border como fotototem-ref) */
 .stage-card[data-ratio="3:4"]  { aspect-ratio: 3/4; }
 .stage-card[data-ratio="4:3"] { aspect-ratio: 4/3; }
 
-/* Câmera: position absolute, preenche tudo, sem distorcer (object-cover) */
-/* Idêntico ao: className="absolute top-0 left-0 w-full h-full object-cover -scale-x-100" */
 #camera-feed,
 #gphoto-feed {
   position: absolute;
   top: 0; left: 0; width: 100%; height: 100%;
-  object-fit: cover;   /* preenche sem distorcer — igual ao fotototem-ref */
+  object-fit: cover;
   display: block;
-  transform: scaleX(-1); /* espelho para selfie natural */
+  transform: scaleX(-1);
+  border: none;
 }
 
-/* Frame overlay: matches canvas rendering exactly */
 #frame-overlay {
   position: absolute;
   top: 0; left: 0; width: 100%; height: 100%;
-  object-fit: cover; /* prevents any distortion */
+  object-fit: cover;
   pointer-events: none;
   z-index: 10;
   opacity: 0;
@@ -174,24 +170,45 @@ html, body {
 }
 #frame-overlay.loaded { opacity: 1; }
 
+.camera-instruction-overlay {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--white);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 14px;
+  z-index: 12;
+  white-space: nowrap;
+}
+
+/* Text panel lateral */
+.preview-text-panel { flex: 1; max-width: 460px; display: flex; flex-direction: column; gap: 16px; color: var(--black); align-items: flex-start; }
+.sparkle-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; background: var(--black-5);
+  font-size: 14px; color: var(--globo-blue); width: fit-content;
+}
+.preview-headline { font-size: clamp(40px, 5vw, 64px); font-weight: 700; line-height: 0.95; letter-spacing: -0.03em; margin: 0; color: var(--black); text-align: left; }
+.preview-subtext   { font-size: 18px; color: var(--black); opacity: 0.72; line-height: 1.5; margin: 0; max-width: 460px; text-align: left; }
+.preview-hint      { font-size: 14px; color: var(--black-50); line-height: 1.4; margin: 0; text-align: left; }
+.status-text { font-size: 14px; color: var(--black-50); margin: 0; text-align: left; }
+
 /* Mode badge */
 .mode-badge {
-  position: absolute; top: 10px; left: 10px; z-index: 11;
+  position: absolute; top: 16px; left: 16px; z-index: 11;
   display: flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 999px;
-  background: rgba(0,168,107,.15); border: 1px solid rgba(0,168,107,.4);
-  color: #4ADE80; font-size: 11px; font-weight: 600; backdrop-filter: blur(6px);
+  background: rgba(0,0,0,.5);
+  color: #fff; font-size: 11px; font-weight: 600;
 }
 
-/* Idle text */
-.preview-overlay-text {
-  position: absolute; bottom: 0; left: 0; right: 0; z-index: 12;
-  padding: 16px 12px; text-align: center; font-size: 15px; font-weight: 600; color: #fff;
-  background: linear-gradient(to top, rgba(0,0,0,.55) 0%, transparent 100%);
-  transition: opacity .3s;
-}
+/* Idle text (old overlay text) - hidden by default, or repurposed */
+.preview-overlay-text { display: none; }
 
-/* Countdown — igual ao fotototem-ref */
+/* Countdown */
 .countdown-overlay {
   position: absolute; inset: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center;
@@ -206,110 +223,69 @@ html, body {
   width: 160px; height: 160px; border-radius: 50%;
   background: rgba(0,0,0,.65); border: 4px solid rgba(255,255,255,.7);
   display: flex; align-items: center; justify-content: center;
-  font-size: 72px; font-weight: 800; color: #fff; line-height: 1;
-  box-shadow: 0 0 60px rgba(0,0,0,.7);
+  font-size: 72px; font-weight: 700; color: #fff; line-height: 1;
 }
-@keyframes countPop {
-  0%   { transform: scale(1.4); opacity: 0; }
-  50%  { transform: scale(.9);  opacity: 1; }
-  100% { transform: scale(1);   opacity: 1; }
-}
-
-/* Flash */
+@keyframes countPop { 0% { transform: scale(1.4); opacity: 0; } 50% { transform: scale(.9);  opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
 .flash-overlay { position: absolute; inset: 0; z-index: 50; background: #fff; pointer-events: none; }
 @keyframes flashEffect { 0% { opacity: .9; } 100% { opacity: 0; } }
-
-/* Text panel lateral */
-.preview-text-panel { flex: 1; max-width: 400px; display: flex; flex-direction: column; gap: 18px; color: #003B71; }
-.sparkle-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 999px; background: #F0F4F8;
-  font-size: 12px; color: #05A6FF; font-weight: 600; width: fit-content;
-}
-.preview-headline { font-size: clamp(26px, 3.2vw, 42px); font-weight: 800; line-height: 1.15; margin: 0; }
-.preview-subtext   { font-size: 14px; color: #555; line-height: 1.6; margin: 0; }
-.preview-hint      { font-size: 12px; color: #888; margin: 0; }
 
 /* ════════════════ RESULT ════════════════ */
 .state-result {
   position: fixed; inset: 0; z-index: 100;
-  background: #FFFFFF;
+  background: var(--white);
   flex-direction: row; align-items: center; justify-content: center;
-  gap: 56px; padding: 48px;
+  gap: clamp(40px, 5vw, 80px); padding: clamp(32px, 6vw, 96px);
+}
+@media (max-width: 900px) {
+  .state-result { flex-direction: column; gap: 32px; padding: 24px; }
 }
 
-/* Foto — borda branca + rotação (fotototem-ref style) */
 .result-photo-panel { flex: 1; display: flex; justify-content: flex-end; align-items: center; max-width: 500px; }
 .result-photo-panel img {
   width: 100%; max-width: 440px; height: auto;
-  border-radius: 12px; border: 1px solid rgba(0, 59, 113, 0.08);
-  box-shadow: 0 24px 64px rgba(0, 59, 113, 0.12), 0 8px 24px rgba(0, 59, 113, 0.06);
-  transform: rotate(1deg); transition: transform .3s;
-  object-fit: contain; /* foto não é cortada — exibe naturalmente */
+  border-radius: 15px;
+  object-fit: contain;
 }
-.result-photo-panel img:hover { transform: rotate(0deg); }
 
-/* QR panel */
-.result-qr-panel { flex: 1; max-width: 360px; display: flex; flex-direction: column; gap: 16px; color: #003B71; }
-.qr-title { font-size: clamp(26px, 3.2vw, 40px); font-weight: 800; margin: 0; color: #003B71; }
-.qr-body  { font-size: 14px; color: #555; margin: 0; }
+.result-qr-panel { flex: 1; max-width: 460px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+.qr-title { font-size: clamp(40px, 5vw, 64px); font-weight: 700; line-height: 0.95; letter-spacing: -0.03em; margin: 0; color: var(--black); }
+.qr-body  { font-size: 18px; color: var(--black); opacity: 0.72; margin: 0; line-height: 1.5; }
 .qr-wrapper {
-  background: #fff; border-radius: 16px; padding: 16px;
+  background: var(--black-5); border-radius: 15px; padding: 24px;
   width: fit-content;
-  box-shadow: 0 20px 60px rgba(0,0,0,.3);
   display: flex; align-items: center; justify-content: center;
-  min-width: 332px; min-height: 332px;
+  min-width: 200px; min-height: 200px;
 }
 .qr-loader { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.qr-count  { font-size: 12px; color: #888; margin: 0; }
+.qr-count  { font-size: 14px; color: var(--black-50); margin: 0; }
 
-/* Download button like fotototem-ref */
 .btn-download {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 12px 24px; border-radius: 999px;
-  background: #F0F4F8; border: 1px solid #D1DDE8;
-  color: #003B71; font-size: 14px; font-weight: 600; cursor: pointer;
-  transition: background .2s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 24px; border-radius: 999px;
+  background: var(--black-5); border: none;
+  color: var(--black); font-size: 16px; font-weight: 400; cursor: pointer;
+  transition: background .2s; text-transform: none;
 }
-.btn-download:hover { background: #E2E8F0; }
+.btn-download:hover { background: var(--black-25); }
+.btn-download:focus-visible { outline: 2px solid var(--globo-blue); }
 
-/* Progress bar */
-.reset-bar { position: fixed; bottom: 12px; left: 0; right: 0; height: 3px; background: rgba(0,59,113,.1); z-index: 200; }
-.reset-bar-fill { height: 100%; background: #05A6FF; width: 100%; }
+.reset-bar { position: fixed; bottom: 24px; left: 0; right: 0; height: 3px; background: rgba(0,0,0,.05); z-index: 200; }
+@media (min-width: 1440px) { .reset-bar { bottom: 32px; } }
+.reset-bar-fill { height: 100%; background: var(--globo-blue); width: 100%; }
 
 .diagnostics-info {
-  position: fixed;
-  left: 12px;
-  bottom: 14px;
-  z-index: 260;
-  max-width: min(620px, calc(100vw - 220px));
-  padding: 7px 9px;
-  border-radius: 6px;
-  background: rgba(0,0,0,.38);
-  color: rgba(255,255,255,.78);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.35;
-  pointer-events: none;
+  position: fixed; left: 12px; bottom: 40px; z-index: 260;
+  padding: 7px 9px; border-radius: 6px; background: rgba(0,0,0,.38);
+  color: rgba(255,255,255,.78); font-size: 11px; pointer-events: none;
 }
-
 .build-info {
-  position: fixed;
-  right: 12px;
-  bottom: 14px;
-  z-index: 260;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: rgba(0,0,0,.32);
-  color: rgba(255,255,255,.72);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  pointer-events: none;
+  position: fixed; right: 12px; bottom: 40px; z-index: 260;
+  padding: 5px 8px; border-radius: 6px; background: rgba(0,0,0,.32);
+  color: rgba(255,255,255,.72); font-size: 11px; pointer-events: none;
 }
 
 /* ════════════════ ERROR ════════════════ */
-.state-error { flex-direction: column; gap: 16px; z-index: 10; }
-.error-content { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; color: #003B71; max-width: 360px; }
+.state-error { flex-direction: column; gap: 16px; z-index: 10; background: var(--white); }
+.error-content { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; color: var(--black); max-width: 360px; }
 .error-content h2 { font-size: 22px; font-weight: 700; margin: 0; }
-.error-content p  { font-size: 14px; color: #555; margin: 0; }
+.error-content p  { font-size: 14px; color: var(--black-50); margin: 0; }
