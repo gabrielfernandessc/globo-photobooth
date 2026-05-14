@@ -342,19 +342,19 @@
     const sonyControls = document.getElementById('sony-controls');
 
     try {
-      // First check if gphoto2/camera is available
-      const statusResp = await fetch('/api/gphoto/status');
+      // First check if Sony camera is available
+      const statusResp = await fetch('/api/sony/status');
       const statusData = await statusResp.json();
 
       if (!statusData.available) {
         sonySection.style.display = 'none';
         camDivider.style.display = 'none';
-        document.getElementById('css-hint').textContent = 'Nenhuma câmera Sony detectada. Usando filtros visuais.';
+        document.getElementById('css-hint').textContent = 'Nenhuma câmera Sony conectada nativamente. Usando filtros visuais básicos.';
         return;
       }
 
       // Camera detected — show Sony section
-      const camName = statusData.camera.split(' — ')[0] || 'Sony Camera';
+      const camName = statusData.camera.split(' ')[0] || 'Sony Camera';
       document.getElementById('sony-camera-name').textContent = camName;
       sonySection.style.display = 'block';
       camDivider.style.display = 'block';
@@ -362,13 +362,13 @@
       // Load all configs in one bulk request
       sonyControls.innerHTML = '<p style="font-size:12px;color:var(--preto-50);text-align:center">Carregando…</p>';
 
-      const resp = await fetch('/api/gphoto/all-configs');
+      const resp = await fetch('/api/sony/all-configs');
       const configs = await resp.json();
 
       sonyControls.innerHTML = '';
 
       // Priority order for display
-      const order = ['iso', 'aperture', 'shutter', 'ev', 'wb', 'focus', 'flash', 'metering', 'drive', 'quality', 'effect'];
+      const order = ['iso', 'aperture', 'f-number', 'shutter', 'shutter-speed', 'ev', 'exposure-compensation', 'wb', 'white-balance', 'focus', 'flash', 'metering', 'drive', 'quality', 'effect'];
 
       for (const key of order) {
         const cfg = configs[key];
@@ -400,7 +400,7 @@
           status.textContent = '…';
           status.className = 'cam-status';
           try {
-            const r = await fetch(`/api/gphoto/config/${key}`, {
+            const r = await fetch(`/api/sony/config/${key}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ value: sel.value })
@@ -447,7 +447,7 @@
       btnAutofocus.disabled = true;
       vibrate(30);
       try {
-        const r = await fetch('/api/gphoto/autofocus', { method: 'POST' });
+        const r = await fetch('/api/sony/autofocus', { method: 'POST' });
         const d = await r.json();
         btnAutofocus.textContent = d.success ? '✓' : '✗';
         setTimeout(() => { btnAutofocus.textContent = 'AF'; }, 1200);
@@ -468,7 +468,7 @@
       btn.disabled = true;
       vibrate(20);
       try {
-        await fetch('/api/gphoto/manual-focus', {
+        await fetch('/api/sony/manual-focus', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ direction })

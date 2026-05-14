@@ -119,14 +119,14 @@
     document.addEventListener('keydown', () => initAudio(), { once: true });
 
     try {
-      const r = await fetch('/api/gphoto/status');
+      const r = await fetch('/api/sony/status');
       const d = await r.json();
       if (d.available) {
-        useGphoto = true;
-        bootingMsg.textContent = 'Sony detectada!';
+        useGphoto = true; // Flag agora significa 'Use Native Sony API'
+        bootingMsg.textContent = 'Sony conectada!';
         bootingSub.textContent  = d.camera;
         await sleep(800);
-        startGphotoMode(d.camera);
+        startSonyMode(d.camera);
       } else {
         await startWebcamMode();
       }
@@ -185,11 +185,21 @@
     }
   });
 
-  /* ═══ GPHOTO2 MODE ═══ */
-  function startGphotoMode(cam) {
+  /* ═══ SONY SDK MODE ═══ */
+  let sonyLiveViewInterval = null;
+
+  function startSonyMode(cam) {
     gphotoFeed.classList.remove('hidden');
     video.classList.add('hidden');
-    gphotoFeed.src = '/api/gphoto/preview';
+    
+    // Poll for live view frames
+    if (sonyLiveViewInterval) clearInterval(sonyLiveViewInterval);
+    sonyLiveViewInterval = setInterval(() => {
+      if (!capturing && !statePreview.classList.contains('hidden')) {
+        gphotoFeed.src = '/api/sony/preview?t=' + Date.now();
+      }
+    }, 80);
+
     modeBadge.classList.remove('hidden');
     modeLabel.textContent = cam.split(' ').slice(0, 3).join(' ');
     showState('preview');
@@ -361,7 +371,7 @@
     await sleep(200);
     countdownOvl.classList.add('hidden');
 
-    if (useGphoto) await doGphotoCapture();
+    if (useGphoto) await doSonyCapture();
     else           await doWebcamCapture();
 
     capturing = false;
@@ -369,18 +379,18 @@
     overlayText.textContent = IDLE_MSGS[msgIdx];
   }
 
-  async function doGphotoCapture() {
+  async function doSonyCapture() {
     triggerFlash();
     showState('result');
     resultPhoto.src = '';
-    qrBody.textContent = 'Capturando em alta resolução…';
+    qrBody.textContent = 'Capturando na câmera em alta resolução…';
     qrLoader.innerHTML = '<div class="spinner" style="border-color:rgba(0,59,113,.12);border-top-color:#003B71"></div><p style="font-size:12px;color:#666;margin:4px 0 0">Capturando…</p>';
     qrLoader.style.display = 'flex';
     qrImg.style.display = 'none';
     btnDownload.classList.add('hidden');
 
     try {
-      const resp = await fetch('/api/gphoto/capture', { method: 'POST' });
+      const resp = await fetch('/api/sony/capture', { method: 'POST' });
       const data = await resp.json();
       if (data.success && data.data) {
         const url = data.data.image?.url || data.data.url;

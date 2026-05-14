@@ -7,6 +7,8 @@ const { exec, spawn } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
+const { ServerManager } = require('@alpha-sdk/api');
+const { AlphaSDKClient } = require('@alpha-sdk/client');
 const execAsync = promisify(exec);
 
 const app = express();
@@ -87,80 +89,88 @@ app.get('/api/photos/:code', (req, res) => {
   res.json({ photos: session.photos || [] });
 });
 
-/* ── GPHOTO2 INTEGRATION ──────────────────────────────── */
+/* ── SONY CAMERA REMOTE API INTEGRATION ────────────────── */
 
-let gphotoCapturing = false;
-let previewRunning = false;
+const sonyServer = new ServerManager({ port: 8080 });
+const sonyClient = new AlphaSDKClient({ environment: 'http://localhost:8080' });
+let sonyCameraId = null;
+let sonyCapturing = false;
 
-app.get('/api/gphoto/status', async (req, res) => {
+// Initialize Sony API Server in the background
+sonyServer.start().catch(err => console.error('Error starting Sony SDK server:', err));
+
+app.get('/api/sony/status', async (req, res) => {
   try {
-    const { stdout } = await execAsync('gphoto2 --auto-detect 2>&1');
-    const lines = stdout.split('\n').filter(l => /usb:/i.test(l));
-    if (lines.length === 0) return res.json({ available: false });
-    const camera = lines[0].replace(/\s{2,}/g, ' — ').trim();
-    res.json({ available: true, camera });
-  } catch {
+    const { cameras } = await sonyClient.cameras.list();
+    const camera = cameras.find(c => c.connected !== true) ?? cameras[0];
+    
+    if (!camera) return res.json({ available: false });
+    
+    sonyCameraId = camera.id;
+    if (!camera.connected) {
+      await sonyClient.cameras.connect({
+        cameraId: sonyCameraId,
+        mode: "remote-transfer", // full control + download
+        reconnecting: "on"
+      });
+      await sonyClient.properties.setPriorityKey({ cameraId: sonyCameraId, setting: "pc-remote" });
+    }
+    res.json({ available: true, camera: camera.model });
+  } catch (err) {
+    console.error('Sony status error:', err);
     res.json({ available: false });
   }
 });
 
-app.get('/api/gphoto/preview', (req, res) => {
-  res.writeHead(200, {
-    'Content-Type': 'multipart/x-mixed-replace; boundary=--frame',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
+// Proxy for live view polling
+app.get('/api/sony/preview', async (req, res) => {
+  if (!sonyCameraId) return res.status(404).end();
+  
+  try {
+    const status = await sonyClient.liveView.getStatus({ cameraId: sonyCameraId });
+    if (!status.data.enabled) {
+      await sonyClient.liveView.enable({ cameraId: sonyCameraId });
+    }
+    if (!status.data.streaming) {
+      await sonyClient.liveView.start({ cameraId: sonyCameraId });
+    }
 
-  let active = true;
-  previewRunning = true;
-
-  const sendFrame = () => {
-    if (!active) { previewRunning = false; return; }
-    if (gphotoCapturing) { setTimeout(sendFrame, 300); return; }
-
-    const proc = spawn('gphoto2', ['--capture-preview', '--stdout'], { timeout: 3000 });
-    const chunks = [];
-    proc.stdout.on('data', c => chunks.push(c));
-    proc.stderr.on('data', () => {});
-
-    proc.on('close', () => {
-      if (!active) { previewRunning = false; return; }
-      const frame = Buffer.concat(chunks);
-      if (frame.length > 512) {
-        try {
-          res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
-          res.write(frame);
-          res.write('\r\n');
-        } catch { active = false; previewRunning = false; return; }
-      }
-      setTimeout(sendFrame, 80);
-    });
-
-    proc.on('error', () => setTimeout(sendFrame, 500));
-  };
-
-  sendFrame();
-  req.on('close', () => { active = false; });
+    const frameResponse = await sonyClient.liveView.getFrame({ cameraId: sonyCameraId });
+    const buffer = Buffer.from(await frameResponse.arrayBuffer());
+    
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'no-cache');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).end();
+  }
 });
 
-app.post('/api/gphoto/capture', async (req, res) => {
-  if (gphotoCapturing) return res.status(429).json({ error: 'Capture already in progress' });
+app.post('/api/sony/capture', async (req, res) => {
+  if (sonyCapturing || !sonyCameraId) return res.status(429).json({ error: 'Capture unavailable' });
 
-  gphotoCapturing = true;
-  await new Promise(r => setTimeout(r, 150));
+  sonyCapturing = true;
 
   try {
-    const tmpDir = path.join(__dirname, 'tmp');
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir);
-    const tmpFile = path.join(tmpDir, `cap_${Date.now()}.jpg`);
+    // Fire the shutter
+    await sonyClient.actions.shutter({ cameraId: sonyCameraId });
 
-    await execAsync(`gphoto2 --capture-image-and-download --filename="${tmpFile}" --force-overwrite`);
+    // Wait briefly for the camera to write the file
+    await new Promise(r => setTimeout(r, 1500));
+    
+    // Get latest file from SD card
+    const { files } = await sonyClient.sdCard.list({ cameraId: sonyCameraId, slotNumber: 1 });
+    if (!files || files.length === 0) throw new Error('No files found on SD card');
+    
+    const latest = files[files.length - 1];
 
-    if (!fs.existsSync(tmpFile)) throw new Error('Capture file not created');
+    // Download photo using Alpha SDK ServerManager direct HTTP endpoint
+    // We fetch it from the server since the client download() is meant for direct disk write
+    const downloadRes = await fetch(`http://localhost:8080/api/cameras/${sonyCameraId}/sd-card/slots/1/files/${latest.fileId}/content`);
+    const buffer = await downloadRes.arrayBuffer();
+    const imageData = Buffer.from(buffer).toString('base64');
 
-    const imageData = fs.readFileSync(tmpFile).toString('base64');
-    fs.unlinkSync(tmpFile);
-
+    // Upload to ImgBB
     const params = new URLSearchParams();
     params.append('image', imageData);
     params.append('key', process.env.IMGBB_API_KEY);
@@ -168,123 +178,95 @@ app.post('/api/gphoto/capture', async (req, res) => {
     const response = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: params });
     const data = await response.json();
 
-    gphotoCapturing = false;
+    sonyCapturing = false;
     res.json(data);
   } catch (err) {
-    gphotoCapturing = false;
-    console.error('gphoto2 capture error:', err.message);
+    sonyCapturing = false;
+    console.error('Sony capture error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-/* All allowed gphoto2 config keys for Sony A7III */
-const GPHOTO_CONFIGS = {
-  iso:       '/main/imgsettings/iso',
-  aperture:  '/main/capturesettings/f-number',
-  shutter:   '/main/capturesettings/shutterspeed',
-  wb:        '/main/imgsettings/whitebalance',
-  ev:        '/main/capturesettings/exposurecompensation',
-  focus:     '/main/capturesettings/focusmode',
-  flash:     '/main/capturesettings/flashmode',
-  quality:   '/main/imgsettings/imagequality',
-  drive:     '/main/capturesettings/drivemode',
-  metering:  '/main/capturesettings/meteringmode',
-  effect:    '/main/capturesettings/expprogram',
+const SONY_PROPERTIES = ['iso', 'f-number', 'shutter-speed', 'white-balance', 'exposure-compensation'];
+const SONY_LABELS = {
+  'iso': 'ISO', 
+  'f-number': 'Abertura (f/)', 
+  'shutter-speed': 'Velocidade', 
+  'white-balance': 'Bal. Branco',
+  'exposure-compensation': 'Compensação EV'
 };
 
-const GPHOTO_LABELS = {
-  iso: 'ISO', aperture: 'Abertura (f/)', shutter: 'Velocidade', wb: 'Bal. Branco',
-  ev: 'Compensação EV', focus: 'Modo de Foco', flash: 'Flash',
-  quality: 'Qualidade', drive: 'Modo Disparo', metering: 'Medição', effect: 'Programa',
-};
-
-// Get single config
-app.get('/api/gphoto/config/:key', async (req, res) => {
-  const config = GPHOTO_CONFIGS[req.params.key];
-  if (!config) return res.status(400).json({ error: 'Unknown config' });
-
-  try {
-    const { stdout } = await execAsync(`gphoto2 --get-config "${config}" 2>&1`);
-    const current = (stdout.match(/Current:\s*(.+)/) || [])[1]?.trim();
-    const choices = [...stdout.matchAll(/Choice:\s*\d+\s+(.+)/g)].map(m => m[1].trim());
-    res.json({ current, choices });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get ALL configs in one request (bulk loader for Camera tab)
-app.get('/api/gphoto/all-configs', async (req, res) => {
+app.get('/api/sony/all-configs', async (req, res) => {
+  if (!sonyCameraId) return res.json({});
+  
   const results = {};
-  for (const [key, configPath] of Object.entries(GPHOTO_CONFIGS)) {
-    try {
-      const { stdout } = await execAsync(`gphoto2 --get-config "${configPath}" 2>&1`, { timeout: 3000 });
-      const current = (stdout.match(/Current:\s*(.+)/) || [])[1]?.trim();
-      const choices = [...stdout.matchAll(/Choice:\s*\d+\s+(.+)/g)].map(m => m[1].trim());
-      if (choices.length > 0) {
-        results[key] = { current, choices, label: GPHOTO_LABELS[key] || key };
+  try {
+    for (const key of SONY_PROPERTIES) {
+      try {
+        const propData = await sonyClient.properties.get({ cameraId: sonyCameraId, propertyName: key });
+        if (propData.data && propData.data.supportedValues) {
+          results[key] = { 
+            current: propData.data.value, 
+            choices: propData.data.supportedValues, 
+            label: SONY_LABELS[key] || key 
+          };
+        }
+      } catch (e) {
+        // Ignorar propriedades não suportadas
       }
-    } catch { /* config not supported by this camera — skip */ }
+    }
+  } catch (err) {
+    console.error('Error fetching properties:', err);
   }
   res.json(results);
 });
 
-
-// Set config
-app.post('/api/gphoto/config/:key', async (req, res) => {
-  const config = GPHOTO_CONFIGS[req.params.key];
-  if (!config) return res.status(400).json({ error: 'Unknown config' });
-
+app.post('/api/sony/config/:key', async (req, res) => {
+  if (!sonyCameraId) return res.status(400).json({ error: 'No camera' });
   const { value } = req.body;
   if (value === undefined) return res.status(400).json({ error: 'No value' });
 
   try {
-    await execAsync(`gphoto2 --set-config "${config}=${value}"`);
+    await sonyClient.properties.set({
+      cameraId: sonyCameraId,
+      propertyName: req.params.key,
+      value: value.toString()
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Sony set property error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Autofocus & manual focus actions
+app.post('/api/sony/autofocus', async (req, res) => {
+  if (!sonyCameraId) return res.status(400).json({ error: 'No camera' });
+  try {
+    await sonyClient.actions.startHalfPress({ cameraId: sonyCameraId });
+    await new Promise(r => setTimeout(r, 500));
+    await sonyClient.actions.stopHalfPress({ cameraId: sonyCameraId });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Trigger autofocus (one-shot AF)
-app.post('/api/gphoto/autofocus', async (req, res) => {
-  try {
-    await execAsync('gphoto2 --set-config /main/actions/autofocusdrive=1', { timeout: 5000 });
-    res.json({ success: true });
-  } catch (err) {
-    // Some cameras use a different path
-    try {
-      await execAsync('gphoto2 --set-config autofocusdrive=1', { timeout: 5000 });
-      res.json({ success: true });
-    } catch (err2) {
-      res.status(500).json({ error: err2.message });
-    }
-  }
-});
-
-// Manual focus step: near (-3 to -1) or far (1 to 3)
-app.post('/api/gphoto/manual-focus', async (req, res) => {
-  const { direction } = req.body; // 'near-fine', 'near', 'near-coarse', 'far-fine', 'far', 'far-coarse'
-  const steps = {
-    'near-fine': 1, 'near': 2, 'near-coarse': 3,
-    'far-fine': 4,  'far': 5,  'far-coarse': 6,
-    // Some cameras use negative values
-    'near-1': -1, 'near-2': -2, 'near-3': -3,
-    'far-1': 1,   'far-2': 2,   'far-3': 3,
-  };
-  const step = steps[direction];
-  if (step === undefined) return res.status(400).json({ error: 'Invalid direction' });
+app.post('/api/sony/manual-focus', async (req, res) => {
+  if (!sonyCameraId) return res.status(400).json({ error: 'No camera' });
+  const { direction } = req.body;
+  
+  // Mapping 'near'/'far' from control.js to Sony API Focus actions
+  let action;
+  if (direction.startsWith('near')) action = 'focus-near';
+  else if (direction.startsWith('far')) action = 'focus-far';
+  else return res.status(400).json({ error: 'Invalid direction' });
 
   try {
-    await execAsync(`gphoto2 --set-config /main/actions/manualfocusdrive=${step}`, { timeout: 3000 });
+    await sonyClient.actions[action]({ cameraId: sonyCameraId });
     res.json({ success: true });
   } catch (err) {
-    try {
-      await execAsync(`gphoto2 --set-config manualfocusdrive=${step}`, { timeout: 3000 });
-      res.json({ success: true });
-    } catch (err2) {
-      res.status(500).json({ error: err2.message });
-    }
+    res.status(500).json({ error: err.message });
   }
 });
 

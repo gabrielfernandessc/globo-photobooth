@@ -8,10 +8,12 @@
     "dev": "node server.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "socket.io": "^4.7.5",
+    "@alpha-sdk/api": "^1.0.9",
+    "@alpha-sdk/client": "^0.3.3",
     "dotenv": "^16.4.5",
-    "multer": "^1.4.5-lts.1"
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.5"
   },
   "engines": {
     "node": ">=18.0.0"
