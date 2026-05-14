@@ -330,7 +330,7 @@ app.get('/api/version', (req, res) => {
   res.json({
     version: pkg.version,
     updatedAt: APP_UPDATED_AT,
-    label: `v${pkg.version} • ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+    label: `v${pkg.version} • ${date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`,
   });
 });
 
