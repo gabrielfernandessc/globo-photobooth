@@ -192,16 +192,37 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
     cropHeight = Math.round(cropWidth / targetRatio);
   }
 
-  const scale = 1; // Prevent upscaling to maintain quality
-  const width = Math.round(cropWidth * scale);
-  const height = Math.round(cropHeight * scale);
+  let targetWidth = cropWidth;
+  let targetHeight = cropHeight;
 
-  let pipeline = source.resize(width, height, { fit: 'cover', position: 'centre', kernel: sharp.kernel.lanczos3 });
   const frameBuffer = getSessionFrame(code, aspectRatio);
+  if (frameBuffer) {
+    const frameMeta = await sharp(frameBuffer).metadata();
+    // Se a moldura for maior que a foto cortada, usamos o tamanho da moldura como alvo
+    if (frameMeta.width > targetWidth || frameMeta.height > targetHeight) {
+      targetWidth = frameMeta.width;
+      targetHeight = frameMeta.height;
+    }
+  }
+
+  // Garantir uma resolução mínima para "Alta Qualidade" (ex: 1600px de altura)
+  // Isso evita que fotos de webcam fiquem minúsculas/pixeladas ao baixar no celular
+  const MIN_HEIGHT = 1600;
+  if (targetHeight < MIN_HEIGHT) {
+    const factor = MIN_HEIGHT / targetHeight;
+    targetWidth = Math.round(targetWidth * factor);
+    targetHeight = MIN_HEIGHT;
+  }
+
+  let pipeline = source.resize(targetWidth, targetHeight, { 
+    fit: 'cover', 
+    position: 'centre', 
+    kernel: sharp.kernel.lanczos3 
+  });
 
   if (frameBuffer) {
     const frame = await sharp(frameBuffer)
-      .resize(width, height, { fit: 'fill' })
+      .resize(targetWidth, targetHeight, { fit: 'fill' })
       .png()
       .toBuffer();
     pipeline = pipeline.composite([{ input: frame, left: 0, top: 0 }]);
@@ -224,12 +245,12 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
       sourceHeight,
       cropWidth,
       cropHeight,
-      finalWidth: width,
-      finalHeight: height,
+      finalWidth: targetWidth,
+      finalHeight: targetHeight,
       finalBytes: stat.size,
       format: 'jpeg',
       quality: FINAL_JPEG_QUALITY,
-      upscaleFactor: Number(scale.toFixed(2)),
+      upscaleFactor: Number((targetHeight / cropHeight).toFixed(2)),
       aspectRatio,
       frameApplied: !!frameBuffer,
     },
