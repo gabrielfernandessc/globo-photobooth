@@ -45,6 +45,7 @@
   const captureCanvas = $('capture-canvas');
   const btnDownload   = $('btn-download');
   const buildInfo     = $('build-info');
+  const diagnosticsInfo = $('diagnostics-info');
 
   /* ── State ── */
   let sessionCode   = null;
@@ -57,6 +58,15 @@
   let photoTotal    = 0;
   let currentTimer  = 3;
   const savedWidths = { '4:5': '', '16:9': '' };
+  const diagnostics = {
+    mode: 'Inicializando',
+    preview: '--',
+    track: '',
+    capture: '--',
+    payload: '--',
+    final: '--',
+    finalFile: '--',
+  };
 
   const RESULT_MS = 12000; // 12s — otimizado para fila
 
@@ -152,6 +162,49 @@
     }
   }
 
+  function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return '--';
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  function estimateDataUrlBytes(dataUrl) {
+    const base64 = (dataUrl || '').split(',')[1] || '';
+    return Math.round(base64.length * 0.75);
+  }
+
+  function setDiagnostics(next) {
+    Object.assign(diagnostics, next);
+    if (!diagnosticsInfo) return;
+    diagnosticsInfo.textContent = [
+      `Modo: ${diagnostics.mode}`,
+      `Preview: ${diagnostics.preview}`,
+      diagnostics.track ? `Track: ${diagnostics.track}` : '',
+      `Captura: ${diagnostics.capture}`,
+      `Envio: ${diagnostics.payload}`,
+      `Final: ${diagnostics.final}`,
+      `Arquivo: ${diagnostics.finalFile}`,
+    ].filter(Boolean).join(' | ');
+  }
+
+  function refreshPreviewDiagnostics() {
+    if (useGphoto) {
+      const w = gphotoFeed.naturalWidth || 0;
+      const h = gphotoFeed.naturalHeight || 0;
+      setDiagnostics({ mode: 'Sony SDK', preview: w && h ? `${w}x${h}` : '--' });
+      return;
+    }
+
+    const w = video.videoWidth || 0;
+    const h = video.videoHeight || 0;
+    const track = stream?.getVideoTracks?.()[0];
+    const settings = track?.getSettings?.() || {};
+    const trackText = settings.width && settings.height
+      ? `${settings.width}x${settings.height}${settings.frameRate ? ` @ ${Math.round(settings.frameRate)}fps` : ''}`
+      : '';
+    setDiagnostics({ mode: 'Webcam web', preview: w && h ? `${w}x${h}` : '--', track: trackText });
+  }
+
   /* ═══ PERSISTENT SESSION ═══
      Priority:
      1. ?code=XXXX in URL (forced)
@@ -209,6 +262,8 @@
 
     modeBadge.classList.remove('hidden');
     modeLabel.textContent = cam.split(' ').slice(0, 3).join(' ');
+    setDiagnostics({ mode: 'Sony SDK' });
+    setInterval(refreshPreviewDiagnostics, 1000);
     showState('preview');
   }
 
@@ -225,6 +280,8 @@
         stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio: false });
         video.srcObject = stream;
         await video.play();
+        refreshPreviewDiagnostics();
+        setInterval(refreshPreviewDiagnostics, 1000);
         showState('preview');
         return;
       } catch { /* try next */ }
@@ -409,6 +466,7 @@
         showResult(imageUrl, true);
         generateQR(pageUrl);
         setupDownloadUrl(data.data.downloadUrl || imageUrl);
+        applyFinalDiagnostics(data.data.meta);
         socket.emit('photo-uploaded', { code: sessionCode, url: imageUrl, thumbnail: imageUrl });
       } else { showState('preview'); }
     } catch { showState('preview'); }
@@ -433,6 +491,12 @@
 
     const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.97);
     lastDataUrl = dataUrl;
+    setDiagnostics({
+      capture: `${w}x${h}`,
+      payload: formatBytes(estimateDataUrlBytes(dataUrl)),
+      final: 'processando',
+      finalFile: '--',
+    });
 
     showResult(dataUrl, true);
 
@@ -455,6 +519,7 @@
         showResult(imageUrl, true);
         generateQR(pageUrl);
         setupDownloadUrl(data.data.downloadUrl || imageUrl);
+        applyFinalDiagnostics(data.data.meta);
         socket.emit('photo-uploaded', { code: sessionCode, url: imageUrl, thumbnail: imageUrl });
       } else {
         qrBody.textContent = 'Upload falhou — salve via botão abaixo.';
@@ -515,6 +580,15 @@
     btnDownload.onclick = () => {
       window.open(url, '_blank', 'noopener');
     };
+  }
+
+  function applyFinalDiagnostics(meta) {
+    if (!meta) return;
+    setDiagnostics({
+      final: meta.finalWidth && meta.finalHeight ? `${meta.finalWidth}x${meta.finalHeight}` : '--',
+      finalFile: `${formatBytes(meta.finalBytes)} ${meta.format || ''} q${meta.quality || ''}`.trim(),
+      payload: meta.inputBytes ? formatBytes(meta.inputBytes) : diagnostics.payload,
+    });
   }
 
   function loadFrame() {

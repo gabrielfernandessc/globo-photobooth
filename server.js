@@ -14,7 +14,7 @@ const io = new Server(server, { maxHttpBufferSize: 20e6 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const sessions = new Map();
-const APP_UPDATED_AT = '2026-05-13T22:44:07-03:00';
+const APP_UPDATED_AT = '2026-05-13T22:56:05-03:00';
 const PHOTO_DIRS = {
   uploads: path.join(__dirname, 'public', 'uploads'),
   original: path.join(__dirname, 'public', 'uploads', 'original'),
@@ -209,7 +209,22 @@ async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
     .withMetadata()
     .toFile(finalPath);
 
-  return { finalFilename, finalPath, width, height };
+  const stat = fs.statSync(finalPath);
+  return {
+    finalFilename,
+    finalPath,
+    meta: {
+      sourceWidth,
+      sourceHeight,
+      finalWidth: width,
+      finalHeight: height,
+      finalBytes: stat.size,
+      format: 'jpeg',
+      quality: 97,
+      aspectRatio,
+      frameApplied: !!frameBuffer,
+    },
+  };
 }
 
 function renderDownloadPage(filename) {
@@ -252,10 +267,10 @@ app.post('/api/upload', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     const inputBuffer = decodeDataImage(image);
-    const { finalFilename } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
+    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
     const urls = buildPhotoUrls(req, finalFilename);
     
-    res.json({ success: true, data: { ...urls, url: urls.imageUrl, image: { url: urls.imageUrl } } });
+    res.json({ success: true, data: { ...urls, url: urls.imageUrl, image: { url: urls.imageUrl }, meta: { ...meta, inputBytes: inputBuffer.length } } });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
@@ -312,10 +327,10 @@ app.post('/api/photo/finalize', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     const inputBuffer = decodeDataImage(image);
-    const { finalFilename } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
+    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
     const urls = buildPhotoUrls(req, finalFilename);
 
-    res.json({ success: true, data: urls });
+    res.json({ success: true, data: { ...urls, meta: { ...meta, inputBytes: inputBuffer.length } } });
   } catch (err) {
     console.error('Finalize photo error:', err);
     res.status(500).json({ error: err.message || 'Finalize failed' });
@@ -464,11 +479,11 @@ app.post('/api/sony/capture', async (req, res) => {
     const originalPath = path.join(PHOTO_DIRS.original, originalFilename);
     if (downloadedPath !== originalPath) fs.copyFileSync(downloadedPath, originalPath);
 
-    const { finalFilename } = await composeFinalPhoto(originalPath, { code, aspectRatio });
+    const { finalFilename, meta } = await composeFinalPhoto(originalPath, { code, aspectRatio });
     const urls = buildPhotoUrls(req, finalFilename, originalFilename);
 
     sonyCapturing = false;
-    res.json({ success: true, data: urls });
+    res.json({ success: true, data: { ...urls, meta } });
   } catch (err) {
     sonyCapturing = false;
     console.error('Sony capture error:', err.message);

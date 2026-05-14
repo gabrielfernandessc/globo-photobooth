@@ -276,6 +276,22 @@ html, body {
 .reset-bar { position: fixed; bottom: 5px; left: 0; right: 0; height: 3px; background: rgba(255,255,255,.15); z-index: 200; }
 .reset-bar-fill { height: 100%; background: rgba(255,255,255,.6); width: 100%; }
 
+.diagnostics-info {
+  position: fixed;
+  left: 12px;
+  bottom: 14px;
+  z-index: 260;
+  max-width: min(620px, calc(100vw - 220px));
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.38);
+  color: rgba(255,255,255,.78);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
 .build-info {
   position: fixed;
   right: 12px;
