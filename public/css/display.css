@@ -112,12 +112,12 @@ html, body {
 /* Main layout: câmera + texto */
 .preview-main {
   position: absolute; inset: 0;
-  padding: 72px clamp(32px, 6vw, 96px) clamp(48px, 6vw, 96px); /* 72px for header, padding bottom to clear multicolor bar */
+  padding: 72px clamp(24px, 4vw, 64px) clamp(32px, 4vw, 64px); 
   display: grid;
-  grid-template-columns: minmax(360px, 520px) minmax(320px, 460px);
+  grid-template-columns: minmax(auto, 600px) minmax(300px, 400px);
   align-content: center;
   justify-content: center;
-  gap: clamp(40px, 5vw, 80px);
+  gap: clamp(24px, 5vw, 64px);
 }
 @media (max-width: 900px) {
   .preview-main {

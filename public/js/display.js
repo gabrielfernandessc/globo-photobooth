@@ -72,7 +72,6 @@
 
   const IDLE_MSGS = [
     '📸 Faça uma pose incrível!',
-    '🤩 Sorria para a câmera!',
     '😎 Mostre seu melhor lado!',
     '✌️ Seja você mesmo!',
     '🎉 Vamos tirar uma foto?',
