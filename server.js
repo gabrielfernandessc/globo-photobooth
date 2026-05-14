@@ -414,50 +414,10 @@ io.on('connection', (socket) => {
     if (s && s.displaySocket) io.to(s.displaySocket).emit('reset-to-preview');
   });
 
-  /* ── Camera control relay (CSS filters) ── */
+  /* ── Camera control relay ── */
   socket.on('cam-control', ({ code, cmd }) => {
     const s = sessions.get(code);
     if (s && s.displaySocket) io.to(s.displaySocket).emit('cam-control', { cmd });
-  });
-
-  /* ── Camera capabilities relay (browser-based real controls) ── */
-  // Display sends capabilities after reading from MediaStreamTrack
-  socket.on('camera-capabilities', ({ code, capabilities }) => {
-    const s = sessions.get(code);
-    if (s) {
-      s.cameraCapabilities = capabilities;
-      // Forward to controller if connected
-      if (s.controlSocket) {
-        io.to(s.controlSocket).emit('camera-capabilities', { capabilities });
-      }
-    }
-  });
-
-  // Controller requests capabilities (e.g., on tab open)
-  socket.on('request-camera-capabilities', ({ code }) => {
-    const s = sessions.get(code);
-    if (!s) return;
-    // If we have cached capabilities, send them directly
-    if (s.cameraCapabilities) {
-      socket.emit('camera-capabilities', { capabilities: s.cameraCapabilities });
-    }
-    // Also ask display to re-read and re-send
-    if (s.displaySocket) {
-      io.to(s.displaySocket).emit('request-camera-capabilities');
-    }
-  });
-
-  // Controller wants to change a real camera setting → relay to display
-  socket.on('apply-cam-constraint', ({ code, key, value }, cb) => {
-    const s = sessions.get(code);
-    if (!s || !s.displaySocket) {
-      if (cb) cb({ success: false, error: 'Display not connected' });
-      return;
-    }
-    // Forward to display with callback
-    io.to(s.displaySocket).emit('apply-cam-constraint', { key, value }, (result) => {
-      if (cb) cb(result);
-    });
   });
 
 

@@ -322,195 +322,159 @@
     socket.emit('cam-control', { code: sessionCode, cmd });
   }
 
-  /* ── Real camera controls via browser capabilities ──
-     These controls are READ from the display's MediaStreamTrack
-     (which runs on the totem PC where the camera is connected)
-     and APPLIED via socket relay. No gphoto2 needed. */
+  /* ── Sony gphoto2 real controls ── */
 
-  let cameraCapsLoaded = false;
+  // Load on first Camera tab click + on explicit reload
+  let gphotoLoaded = false;
 
-  // Request capabilities when camera tab is first opened
   document.getElementById('tab-camera').addEventListener('click', () => {
-    if (!cameraCapsLoaded) {
-      requestCameraCapabilities();
-    }
+    if (!gphotoLoaded) loadSonyControls();
   }, { once: true });
 
   const btnReloadConfigs = document.getElementById('btn-reload-configs');
   if (btnReloadConfigs) {
-    btnReloadConfigs.addEventListener('click', () => requestCameraCapabilities());
+    btnReloadConfigs.addEventListener('click', () => loadSonyControls());
   }
 
-  function requestCameraCapabilities() {
-    if (!sessionCode) return;
-    const sonyControls = document.getElementById('sony-controls');
-    if (sonyControls) {
-      sonyControls.innerHTML = '<p style="font-size:12px;color:var(--preto-50);text-align:center">Solicitando controles da câmera…</p>';
-    }
-    socket.emit('request-camera-capabilities', { code: sessionCode });
-  }
-
-  // Receive capabilities from display
-  socket.on('camera-capabilities', ({ capabilities }) => {
-    renderCameraControls(capabilities);
-  });
-
-  function renderCameraControls(capabilities) {
+  async function loadSonyControls() {
     const sonySection = document.getElementById('sony-section');
     const camDivider  = document.getElementById('cam-divider');
     const sonyControls = document.getElementById('sony-controls');
 
-    const keys = Object.keys(capabilities || {});
+    try {
+      // First check if gphoto2/camera is available
+      const statusResp = await fetch('/api/gphoto/status');
+      const statusData = await statusResp.json();
 
-    if (keys.length === 0) {
-      sonySection.style.display = 'none';
-      camDivider.style.display = 'none';
-      document.getElementById('css-hint').textContent =
-        'A câmera não expõe controles avançados ao navegador. Use os filtros visuais abaixo.';
-      return;
-    }
+      if (!statusData.available) {
+        sonySection.style.display = 'none';
+        camDivider.style.display = 'none';
+        document.getElementById('css-hint').textContent = 'Nenhuma câmera Sony detectada. Usando filtros visuais.';
+        return;
+      }
 
-    // Show section
-    document.getElementById('sony-camera-name').textContent = 'Câmera Detectada';
-    const subEl = sonySection.querySelector('.cam-section-sub');
-    if (subEl) subEl.textContent = keys.length + ' controles disponíveis · via navegador';
-    sonySection.style.display = 'block';
-    camDivider.style.display = 'block';
-    sonyControls.innerHTML = '';
+      // Camera detected — show Sony section
+      const camName = statusData.camera.split(' — ')[0] || 'Sony Camera';
+      document.getElementById('sony-camera-name').textContent = camName;
+      sonySection.style.display = 'block';
+      camDivider.style.display = 'block';
 
-    // Priority order
-    const order = [
-      'iso', 'exposureTime', 'exposureCompensation', 'exposureMode',
-      'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature',
-      'brightness', 'contrast', 'saturation', 'sharpness', 'zoom', 'pan', 'tilt'
-    ];
+      // Load all configs in one bulk request
+      sonyControls.innerHTML = '<p style="font-size:12px;color:var(--preto-50);text-align:center">Carregando…</p>';
 
-    const orderedKeys = order.filter(k => capabilities[k]);
-    const remainingKeys = keys.filter(k => !order.includes(k));
-    const allKeys = [...orderedKeys, ...remainingKeys];
+      const resp = await fetch('/api/gphoto/all-configs');
+      const configs = await resp.json();
 
-    for (const key of allKeys) {
-      const cap = capabilities[key];
-      const row = document.createElement('div');
-      row.className = 'cam-ctrl-row';
+      sonyControls.innerHTML = '';
 
-      const label = document.createElement('span');
-      label.className = 'cam-label';
-      label.textContent = cap.label;
+      // Priority order for display
+      const order = ['iso', 'aperture', 'shutter', 'ev', 'wb', 'focus', 'flash', 'metering', 'drive', 'quality', 'effect'];
 
-      const status = document.createElement('span');
-      status.className = 'cam-status';
+      for (const key of order) {
+        const cfg = configs[key];
+        if (!cfg || !cfg.choices || cfg.choices.length === 0) continue;
 
-      if (cap.type === 'enum') {
+        const row = document.createElement('div');
+        row.className = 'cam-ctrl-row';
+
+        const label = document.createElement('span');
+        label.className = 'cam-label';
+        label.textContent = cfg.label;
+
         const sel = document.createElement('select');
-        sel.id = 'cam-' + key;
-        cap.options.forEach(opt => {
-          const el = document.createElement('option');
-          el.value = opt;
-          el.textContent = formatOption(key, opt);
-          if (opt === cap.current) el.selected = true;
-          sel.appendChild(el);
+        sel.id = `gp-${key}`;
+        cfg.choices.forEach(ch => {
+          const opt = document.createElement('option');
+          opt.value = ch;
+          opt.textContent = ch;
+          if (ch === cfg.current) opt.selected = true;
+          sel.appendChild(opt);
         });
-        sel.addEventListener('change', () => applyCamConstraint(key, sel.value, status));
+
+        // Status indicator
+        const status = document.createElement('span');
+        status.className = 'cam-status';
+        status.textContent = '';
+
+        sel.addEventListener('change', async () => {
+          status.textContent = '…';
+          status.className = 'cam-status';
+          try {
+            const r = await fetch(`/api/gphoto/config/${key}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ value: sel.value })
+            });
+            const d = await r.json();
+            if (d.success) {
+              status.textContent = '✓';
+              status.className = 'cam-status cam-status-ok';
+              setTimeout(() => { status.textContent = ''; }, 1500);
+            } else {
+              status.textContent = '✗';
+              status.className = 'cam-status cam-status-err';
+            }
+          } catch {
+            status.textContent = '✗';
+            status.className = 'cam-status cam-status-err';
+          }
+        });
+
         row.appendChild(label);
         row.appendChild(sel);
         row.appendChild(status);
-      } else if (cap.type === 'range') {
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.id = 'cam-' + key;
-        slider.min = cap.min;
-        slider.max = cap.max;
-        slider.step = cap.step;
-        slider.value = cap.current;
-
-        const valSpan = document.createElement('span');
-        valSpan.className = 'cam-val';
-        valSpan.textContent = formatValue(key, cap.current);
-
-        let debounceTimer;
-        slider.addEventListener('input', () => {
-          valSpan.textContent = formatValue(key, slider.value);
-          clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            applyCamConstraint(key, parseFloat(slider.value), status);
-          }, 150);
-        });
-
-        row.appendChild(label);
-        row.appendChild(slider);
-        row.appendChild(valSpan);
-        row.appendChild(status);
+        sonyControls.appendChild(row);
       }
 
-      sonyControls.appendChild(row);
-    }
-
-    // Show/hide focus section
-    const focusSection = document.getElementById('focus-section');
-    if (focusSection) {
-      focusSection.style.display = (capabilities.focusMode || capabilities.focusDistance) ? 'flex' : 'none';
-    }
-
-    cameraCapsLoaded = true;
-  }
-
-  function formatOption(key, value) {
-    const t = { 'continuous': 'Contínuo', 'manual': 'Manual', 'single-shot': 'Único' };
-    return t[value] || value;
-  }
-
-  function formatValue(key, val) {
-    if (key === 'iso') return 'ISO ' + val;
-    if (key === 'exposureTime') return val + 'µs';
-    if (key === 'exposureCompensation') return (val > 0 ? '+' : '') + val + ' EV';
-    if (key === 'focusDistance') return parseFloat(val).toFixed(2) + 'm';
-    if (key === 'colorTemperature') return val + 'K';
-    if (key === 'zoom') return parseFloat(val).toFixed(1) + 'x';
-    return String(val);
-  }
-
-  function applyCamConstraint(key, value, statusEl) {
-    if (!sessionCode) return;
-    if (statusEl) { statusEl.textContent = '…'; statusEl.className = 'cam-status'; }
-
-    socket.emit('apply-cam-constraint', { code: sessionCode, key, value }, (result) => {
-      if (!statusEl) return;
-      if (result && result.success) {
-        statusEl.textContent = '✓';
-        statusEl.className = 'cam-status cam-status-ok';
-        setTimeout(() => { statusEl.textContent = ''; }, 1500);
-      } else {
-        statusEl.textContent = '✗';
-        statusEl.className = 'cam-status cam-status-err';
-        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+      if (sonyControls.children.length === 0) {
+        sonyControls.innerHTML = '<p style="font-size:12px;color:var(--preto-50);text-align:center">Nenhuma configuração disponível.</p>';
       }
-    });
+
+      gphotoLoaded = true;
+
+    } catch (err) {
+      console.error('Sony controls load error:', err);
+      sonySection.style.display = 'none';
+      camDivider.style.display = 'none';
+    }
   }
 
-  /* ── Focus controls ── */
+  /* ── Autofocus trigger ── */
   const btnAutofocus = document.getElementById('btn-autofocus');
   if (btnAutofocus) {
-    btnAutofocus.addEventListener('click', () => {
+    btnAutofocus.addEventListener('click', async () => {
       btnAutofocus.textContent = '…';
+      btnAutofocus.disabled = true;
       vibrate(30);
-      applyCamConstraint('focusMode', 'continuous', null);
-      setTimeout(() => { btnAutofocus.textContent = 'AF'; }, 1200);
+      try {
+        const r = await fetch('/api/gphoto/autofocus', { method: 'POST' });
+        const d = await r.json();
+        btnAutofocus.textContent = d.success ? '✓' : '✗';
+        setTimeout(() => { btnAutofocus.textContent = 'AF'; }, 1200);
+      } catch {
+        btnAutofocus.textContent = '✗';
+        setTimeout(() => { btnAutofocus.textContent = 'AF'; }, 1200);
+      } finally {
+        btnAutofocus.disabled = false;
+      }
     });
   }
 
+  /* ── Manual focus step buttons ── */
   document.querySelectorAll('.focus-btn[data-focus]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      vibrate(20);
+    btn.addEventListener('click', async () => {
       const direction = btn.dataset.focus;
-      const slider = document.getElementById('cam-focusDistance');
-      if (!slider) return;
-      const step = direction.includes('coarse') ? 0.3 : direction.includes('fine') ? 0.02 : 0.1;
-      const delta = direction.includes('near') ? -step : step;
-      const newVal = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max),
-        parseFloat(slider.value) + delta));
-      slider.value = newVal;
-      slider.dispatchEvent(new Event('input'));
+      const orig = btn.textContent;
+      btn.disabled = true;
+      vibrate(20);
+      try {
+        await fetch('/api/gphoto/manual-focus', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction })
+        });
+      } catch { /* best effort */ }
+      btn.disabled = false;
     });
   });
 

@@ -27,6 +27,7 @@
   const frameOverlay  = $('frame-overlay');
   const modeBadge     = $('mode-badge');
   const modeLabel     = $('mode-label');
+  const stageWrap     = $('stage-wrap');
   const stageCard     = $('stage-card');
   const overlayText   = $('overlay-text');
   const countdownOvl  = $('countdown-overlay');
@@ -47,7 +48,6 @@
   /* ── State ── */
   let sessionCode   = null;
   let stream        = null;
-  let videoTrack    = null; // MediaStreamTrack for camera control
   let useGphoto     = false;
   let aspectRatio   = '4:5';
   let capturing     = false;
@@ -55,6 +55,7 @@
   let lastDataUrl   = null;
   let photoTotal    = 0;
   let currentTimer  = 3;
+  const savedWidths = { '4:5': '', '16:9': '' };
 
   const RESULT_MS = 12000; // 12s — otimizado para fila
 
@@ -207,100 +208,11 @@
         stream = await navigator.mediaDevices.getUserMedia({ video: vc, audio: false });
         video.srcObject = stream;
         await video.play();
-
-        // Get the video track for camera control
-        videoTrack = stream.getVideoTracks()[0];
-        if (videoTrack) {
-          // Read and broadcast camera capabilities
-          readAndBroadcastCapabilities();
-          // Show camera name in badge
-          const label = videoTrack.label || 'Webcam';
-          modeBadge.classList.remove('hidden');
-          modeLabel.textContent = label.length > 28 ? label.slice(0, 25) + '…' : label;
-        }
-
         showState('preview');
         return;
       } catch { /* try next */ }
     }
     showState('error');
-  }
-
-  /* ═══ CAMERA CAPABILITIES (Browser-based) ═══
-     Reads what the camera hardware supports directly from the browser.
-     Works because the camera is connected to THIS machine (the totem),
-     not to the server. Sends capabilities to controller via socket. */
-
-  let cameraCapabilities = null;
-
-  function readAndBroadcastCapabilities() {
-    if (!videoTrack) return;
-
-    try {
-      const caps = videoTrack.getCapabilities();
-      const settings = videoTrack.getSettings();
-
-      // Build a clean capabilities object for the controller
-      const LABELS = {
-        brightness: 'Brilho', contrast: 'Contraste', saturation: 'Saturação',
-        sharpness: 'Nitidez', colorTemperature: 'Temp. Cor (K)',
-        exposureCompensation: 'Comp. Exposição', exposureMode: 'Modo Exposição',
-        exposureTime: 'Tempo Exp. (µs)', focusMode: 'Modo Foco',
-        focusDistance: 'Dist. Foco (m)', iso: 'ISO',
-        whiteBalanceMode: 'Bal. Branco', zoom: 'Zoom',
-        pan: 'Pan', tilt: 'Tilt',
-      };
-
-      const controls = {};
-
-      for (const [key, label] of Object.entries(LABELS)) {
-        if (!caps[key]) continue;
-
-        const cap = caps[key];
-        const current = settings[key];
-
-        if (Array.isArray(cap)) {
-          // Enum-type control (e.g., focusMode: ['continuous', 'manual'])
-          controls[key] = { type: 'enum', label, options: cap, current };
-        } else if (cap.min !== undefined && cap.max !== undefined) {
-          // Range-type control (e.g., iso: {min: 100, max: 12800, step: 100})
-          controls[key] = {
-            type: 'range', label,
-            min: cap.min, max: cap.max,
-            step: cap.step || 1, current: current ?? cap.min
-          };
-        }
-      }
-
-      cameraCapabilities = controls;
-
-      // Send to all connected sockets in this session
-      if (sessionCode) {
-        socket.emit('camera-capabilities', { code: sessionCode, capabilities: controls });
-      }
-
-      console.log('Camera capabilities:', Object.keys(controls));
-    } catch (err) {
-      console.warn('Could not read camera capabilities:', err);
-    }
-  }
-
-  // Apply constraint from controller
-  async function applyCameraConstraint(key, value) {
-    if (!videoTrack) return { success: false, error: 'No video track' };
-
-    try {
-      const constraint = {};
-      constraint[key] = value;
-      await videoTrack.applyConstraints({ advanced: [constraint] });
-
-      // Re-read current settings to confirm
-      const newSettings = videoTrack.getSettings();
-      return { success: true, applied: newSettings[key] };
-    } catch (err) {
-      console.warn(`Failed to apply ${key}=${value}:`, err);
-      return { success: false, error: err.message };
-    }
   }
 
   /* ── Idle messages ── */
@@ -367,8 +279,19 @@
   socket.on('settings-updated', s => {
     if (s.timer) currentTimer = s.timer;
     if (s.aspectRatio && s.aspectRatio !== aspectRatio) {
+      // Save current width for the old aspect ratio
+      savedWidths[aspectRatio] = stageWrap.style.width;
+
       aspectRatio = s.aspectRatio;
       stageCard.dataset.ratio = aspectRatio;
+
+      // Restore saved width for the new aspect ratio
+      if (savedWidths[aspectRatio]) {
+        stageWrap.style.width = savedWidths[aspectRatio];
+      } else {
+        stageWrap.style.width = ''; // back to CSS default
+      }
+
       loadFrame();
     }
   });
@@ -382,19 +305,6 @@
     if (!capturing) startCountdown(timer);
   });
   socket.on('cam-control', ({ cmd }) => applyCamControl(cmd));
-
-  // Controller requests camera capabilities
-  socket.on('request-camera-capabilities', () => {
-    if (cameraCapabilities && sessionCode) {
-      socket.emit('camera-capabilities', { code: sessionCode, capabilities: cameraCapabilities });
-    }
-  });
-
-  // Controller wants to change a real camera setting
-  socket.on('apply-cam-constraint', async ({ key, value }, cb) => {
-    const result = await applyCameraConstraint(key, value);
-    if (cb) cb(result);
-  });
 
   socket.on('show-photo', ({ url }) => { if (url) showResult(url, false); });
   socket.on('photo-ready', ({ total }) => {
