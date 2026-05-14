@@ -1,6 +1,6 @@
 {
   "name": "globo-photobooth",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Totem de Foto Globo para Eventos Corporativos",
   "main": "server.js",
   "scripts": {
@@ -9,8 +9,6 @@
     "share": "cloudflared tunnel --protocol http2 --url http://localhost:3000"
   },
   "dependencies": {
-    "@alpha-sdk/api": "^1.0.9",
-    "@alpha-sdk/client": "^0.3.3",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "multer": "^1.4.5-lts.1",

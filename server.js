@@ -6,8 +6,6 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { ServerManager } = require('@alpha-sdk/api');
-const { AlphaSDKClient } = require('@alpha-sdk/client');
 const pkg = require('./package.json');
 
 const app = express();
@@ -16,13 +14,14 @@ const io = new Server(server, { maxHttpBufferSize: 20e6 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const sessions = new Map();
-const APP_UPDATED_AT = '2026-05-13T22:33:22-03:00';
+const APP_UPDATED_AT = '2026-05-13T22:44:07-03:00';
 const PHOTO_DIRS = {
   uploads: path.join(__dirname, 'public', 'uploads'),
   original: path.join(__dirname, 'public', 'uploads', 'original'),
   final: path.join(__dirname, 'public', 'uploads', 'final'),
 };
 const SONY_SLOT = 1;
+const ENABLE_SONY_SDK = process.env.ENABLE_SONY_SDK === 'true';
 
 app.use(express.static('public'));
 app.use(express.json({ limit: '50mb' }));
@@ -340,16 +339,27 @@ app.get('/download/:filename', (req, res) => {
 
 /* ── SONY CAMERA REMOTE API INTEGRATION ────────────────── */
 
-const sonyServer = new ServerManager({ port: 8080 });
-const sonyClient = new AlphaSDKClient({ environment: 'http://localhost:8080' });
+let sonyServer = null;
+let sonyClient = null;
 let sonyCameraId = null;
 let sonyCapturing = false;
 let sonyQualityConfiguredFor = null;
 
-// Initialize Sony API Server in the background
-sonyServer.start().catch(err => console.error('Error starting Sony SDK server:', err));
+if (ENABLE_SONY_SDK) {
+  try {
+    const { ServerManager } = require('@alpha-sdk/api');
+    const { AlphaSDKClient } = require('@alpha-sdk/client');
+    sonyServer = new ServerManager({ port: 8080 });
+    sonyClient = new AlphaSDKClient({ environment: 'http://localhost:8080' });
+    sonyServer.start().catch(err => console.error('Error starting Sony SDK server:', err));
+  } catch (err) {
+    console.error('Sony SDK unavailable. Running in web-only camera mode:', err.message);
+  }
+}
 
 app.get('/api/sony/status', async (req, res) => {
+  if (!sonyClient) return res.json({ available: false, mode: 'webcam' });
+
   try {
     const { cameras } = await sonyClient.cameras.list();
     const camera = cameras.find(c => c.connected !== true) ?? cameras[0];
@@ -375,6 +385,7 @@ app.get('/api/sony/status', async (req, res) => {
 
 // Proxy for live view polling
 app.get('/api/sony/preview', async (req, res) => {
+  if (!sonyClient) return res.status(404).end();
   if (!sonyCameraId) return res.status(404).end();
   
   try {
@@ -398,6 +409,7 @@ app.get('/api/sony/preview', async (req, res) => {
 });
 
 app.post('/api/sony/capture', async (req, res) => {
+  if (!sonyClient) return res.status(400).json({ error: 'Sony SDK disabled in web-only mode' });
   if (sonyCapturing || !sonyCameraId) return res.status(429).json({ error: 'Capture unavailable' });
 
   sonyCapturing = true;
@@ -504,6 +516,7 @@ async function trySetBestSonyQuality(cameraId) {
 }
 
 app.get('/api/sony/all-configs', async (req, res) => {
+  if (!sonyClient) return res.json({});
   if (!sonyCameraId) return res.json({});
   
   const results = {};
@@ -529,6 +542,7 @@ app.get('/api/sony/all-configs', async (req, res) => {
 });
 
 app.post('/api/sony/config/:key', async (req, res) => {
+  if (!sonyClient) return res.status(400).json({ error: 'Sony SDK disabled in web-only mode' });
   if (!sonyCameraId) return res.status(400).json({ error: 'No camera' });
   const { value } = req.body;
   if (value === undefined) return res.status(400).json({ error: 'No value' });
@@ -548,6 +562,7 @@ app.post('/api/sony/config/:key', async (req, res) => {
 
 // Autofocus & manual focus actions
 app.post('/api/sony/autofocus', async (req, res) => {
+  if (!sonyClient) return res.status(400).json({ error: 'Sony SDK disabled in web-only mode' });
   if (!sonyCameraId) return res.status(400).json({ error: 'No camera' });
   try {
     await sonyClient.actions.startHalfPress({ cameraId: sonyCameraId });
@@ -560,6 +575,7 @@ app.post('/api/sony/autofocus', async (req, res) => {
 });
 
 app.post('/api/sony/manual-focus', async (req, res) => {
+  if (!sonyClient) return res.status(400).json({ error: 'Sony SDK disabled in web-only mode' });
   if (!sonyCameraId) return res.status(400).json({ error: 'No camera' });
   const { direction } = req.body;
   

@@ -4,19 +4,20 @@ Totem de foto para eventos corporativos com controle remoto, moldura customizada
 
 ## Funcionalidades
 
-- 📸 **Preview em tempo real** — Sony A7III via Alpha SDK nativo ou Webcam fallback
+- 📸 **Preview em tempo real** — Câmera pelo navegador, compatível com webcam, câmera virtual ou placa/capture device
 - 📱 **Controle remoto** — Opere a distância pelo celular
 - 🔗 **Pareamento por código** — Conecte o celular ao totem com um código de 4 caracteres
 - 🖼️ **Moldura customizada** — Upload de frame PNG (4:5 Instagram e 16:9)
 - ⏱️ **Countdown ajustável** — 3, 5 ou 10 segundos
 - 📲 **QR Code** — Pessoa escaneia e acessa uma página de download em alta qualidade
-- 🧩 **Composição local** — Foto final com moldura gerada no backend via Sharp, sem ImgBB
+- 🧩 **Composição no servidor** — Foto final com moldura gerada via Sharp, sem ImgBB
 
 ## Setup rápido
 
 ### 1. Pré-requisitos
 - Node.js 18+
-- Para captura Sony: Mac/host local com câmera conectada via USB
+- Navegador com acesso à câmera
+- URL HTTPS em produção, necessária para `getUserMedia`
 
 ### 2. Configuração
 ```bash
@@ -26,18 +27,18 @@ cd globo-photobooth
 # Instale as dependências
 npm install
 
-# Sem ImgBB: as fotos finais são salvas em public/uploads/final
+# Sem ImgBB: as fotos finais são salvas em public/uploads/final no servidor
 ```
 
-### 3. Executar localmente
+### 3. Executar localmente para desenvolvimento
 ```bash
 npm start
 # Acesse http://localhost:3000
 ```
 
 ### 4. No evento
-1. **Computador**: Abra `http://localhost:3000/display.html` (fullscreen F11)
-2. **Celular**: Acesse `http://<IP-DO-COMPUTADOR>:3000/control.html`
+1. **Computador/totem**: Abra `https://SUA-URL/display.html` e permita o acesso à câmera
+2. **Celular**: Acesse `https://SUA-URL/control.html`
 3. Digite o código de 4 caracteres exibido na tela
 4. Configure a moldura e comece a tirar fotos!
 
@@ -50,7 +51,9 @@ npm start
 5. Start Command: `node server.js`
 6. Deploy!
 
-> No Render, o app funciona em modo Webcam. A captura Sony depende da câmera conectada fisicamente ao Mac/host local.
+> O app roda em modo web: a câmera vem do navegador da tela do totem. Para usar uma Sony A7III, ela precisa aparecer para o navegador como webcam/capture device.
+
+> O filesystem do Render pode ser efêmero em alguns planos. Para retenção permanente das fotos após reinícios/deploys, use Render Disk ou um storage externo.
 
 > **Dica**: Use o [UptimeRobot](https://uptimerobot.com) (grátis) para pingar sua URL a cada 5 minutos e evitar cold starts.
 
@@ -80,7 +83,7 @@ globo-photobooth/
 |:---|:---|
 | Node.js + Express | Servidor web |
 | Socket.IO | Comunicação em tempo real |
-| Canvas API | Captura Webcam em alta resolução |
+| Canvas API | Captura web em alta resolução |
 | Sharp | Composição da foto final com moldura |
 | QR Server API | Geração da imagem do QR Code |
 
