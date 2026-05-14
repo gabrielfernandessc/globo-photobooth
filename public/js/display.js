@@ -59,8 +59,8 @@
   const RESULT_MS = 12000; // 12s — otimizado para fila
 
   const RESOLUTIONS = {
-    '4:5':  { w: 1080, h: 1920 },
-    '16:9': { w: 1440, h: 1080 },
+    '4:5':  { w: 2160, h: 3840 },
+    '16:9': { w: 2560, h: 1440 },
   };
 
   const IDLE_MSGS = [
@@ -473,7 +473,7 @@
       const resp = await fetch('/api/gphoto/capture', { method: 'POST' });
       const data = await resp.json();
       if (data.success && data.data) {
-        const url = data.data.url;
+        const url = data.data.image?.url || data.data.url;
         showResult(url, true);
         generateQR(url);
         socket.emit('photo-uploaded', { code: sessionCode, url, thumbnail: data.data.thumb?.url || url });
@@ -515,7 +515,7 @@
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
     }
 
-    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.93);
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.97);
     lastDataUrl = dataUrl;
 
     showResult(dataUrl, true);
@@ -534,7 +534,7 @@
       });
       const data = await resp.json();
       if (data.success && data.data?.url) {
-        const url = data.data.url;
+        const url = data.data.image?.url || data.data.url;
         generateQR(url);
         socket.emit('photo-uploaded', { code: sessionCode, url, thumbnail: data.data.thumb?.url || url });
       } else {
