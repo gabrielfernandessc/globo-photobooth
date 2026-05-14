@@ -143,6 +143,54 @@
     createOrRejoinSession();
     startIdleMessages();
     setupKeyboardShortcuts();
+    setupDraggableResize();
+  }
+
+  function setupDraggableResize() {
+    const handle = document.getElementById('resize-handle');
+    if (!handle) return;
+
+    let isResizing = false;
+
+    const onMove = (e) => {
+      if (!isResizing) return;
+      
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      
+      const rect = stageWrap.getBoundingClientRect();
+      const newW = Math.max(200, Math.min(1200, clientX - rect.left));
+      const newH = Math.max(200, Math.min(1200, clientY - rect.top));
+      
+      stageWrap.style.width = `${newW}px`;
+      stageWrap.style.height = `${newH}px`;
+      
+      // Update control panel if connected
+      socket.emit('cam-control', { previewWidth: Math.round(newW), previewHeight: Math.round(newH) });
+    };
+
+    const onEnd = () => {
+      isResizing = false;
+      document.body.style.cursor = 'default';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isResizing = true;
+      document.body.style.cursor = 'nwse-resize';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onEnd);
+    });
+
+    handle.addEventListener('touchstart', (e) => {
+      isResizing = true;
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onEnd);
+    });
   }
 
   function showState(name) {

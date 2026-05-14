@@ -278,7 +278,31 @@
       selectedRatio = s.aspectRatio;
       ratioPills.forEach(p => p.classList.toggle('active', p.dataset.ratio === s.aspectRatio));
     }
+    if (s.previewWidth) {
+      ctrlPreviewW.value = s.previewWidth;
+      valPreviewW.textContent = s.previewWidth + 'px';
+    }
+    if (s.previewHeight) {
+      ctrlPreviewH.value = s.previewHeight;
+      valPreviewH.textContent = s.previewHeight + 'px';
+    }
   }
+
+  socket.on('cam-control', (cmd) => {
+    if (cmd.brightness !== undefined) { ctrlBrightness.value = cmd.brightness - 100; valBrightness.textContent = cmd.brightness - 100; }
+    if (cmd.contrast   !== undefined) { ctrlContrast.value   = cmd.contrast;     valContrast.textContent   = cmd.contrast + '%'; }
+    if (cmd.saturation !== undefined) { ctrlSaturation.value = cmd.saturation;   valSaturation.textContent = cmd.saturation + '%'; }
+    if (cmd.zoom       !== undefined) { ctrlZoom.value       = cmd.zoom;         valZoom.textContent       = cmd.zoom + 'x'; }
+    
+    if (cmd.previewWidth !== undefined) {
+      ctrlPreviewW.value = cmd.previewWidth;
+      valPreviewW.textContent = cmd.previewWidth + 'px';
+    }
+    if (cmd.previewHeight !== undefined) {
+      ctrlPreviewH.value = cmd.previewHeight;
+      valPreviewH.textContent = cmd.previewHeight + 'px';
+    }
+  });
 
   /* ═══ FRAME UPLOAD ═══ */
 

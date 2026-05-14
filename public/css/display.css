@@ -132,10 +132,28 @@ html, body {
 
 /* Wrap resizable */
 .stage-wrap {
+  position: relative;
   flex-shrink: 0;
   width: 600px;
   height: 800px;
 }
+
+.resize-handle {
+  position: absolute;
+  bottom: -12px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  background: var(--globo-blue);
+  border: 3px solid #fff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+}
+.resize-handle:hover { transform: scale(1.2); }
+.resize-handle:active { background: #fff; border-color: var(--globo-blue); }
 
 /* Inner card */
 .stage-card {
