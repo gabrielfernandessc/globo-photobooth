@@ -165,81 +165,23 @@ async function waitForStableFile(candidates, sinceMs, timeoutMs = 30000) {
   throw new Error('Sony download did not finish in time');
 }
 
-async function composeFinalPhoto(input, { code, aspectRatio = '3:4', filters = {} }) {
+async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
   ensurePhotoDirs();
 
-  const targetRatio = aspectRatio === '4:3' ? 4 / 3 : 3 / 4;
   const metadata = await sharp(input).metadata();
   if (!metadata.width || !metadata.height) throw new Error('Invalid image metadata');
 
-  let sourceWidth = metadata.width;
-  let sourceHeight = metadata.height;
-  if ([5, 6, 7, 8].includes(metadata.orientation)) {
-    sourceWidth = metadata.height;
-    sourceHeight = metadata.width;
-  }
+  const width = metadata.width;
+  const height = metadata.height;
 
   const source = sharp(input).rotate();
-  
-  // Aplica filtros via Sharp (muito mais qualidade que no navegador)
-  // brightness: default 100 -> 1.0
-  // saturation: default 100 -> 1.0
-  // Sharp não tem contrast direto no modulate, usamos linear ou levels
-  const b = (filters.brightness || 100) / 100;
-  const s = (filters.saturation || 100) / 100;
-  const c = (filters.contrast || 100) / 100;
-
-  let processed = source.modulate({ brightness: b, saturation: s });
-  
-  // Ajuste de contraste aproximado via linear (slope, intercept)
-  if (c !== 1) {
-    processed = processed.linear(c, -(0.5 * c) + 0.5);
-  }
-
-  const sourceRatio = sourceWidth / sourceHeight;
-  let cropWidth;
-  let cropHeight;
-
-  if (sourceRatio > targetRatio) {
-    cropHeight = sourceHeight;
-    cropWidth = Math.round(cropHeight * targetRatio);
-  } else {
-    cropWidth = sourceWidth;
-    cropHeight = Math.round(cropWidth / targetRatio);
-  }
-
-  let targetWidth = cropWidth;
-  let targetHeight = cropHeight;
-
   const frameBuffer = getSessionFrame(code, aspectRatio);
-  if (frameBuffer) {
-    const frameMeta = await sharp(frameBuffer).metadata();
-    if (frameMeta.width > targetWidth || frameMeta.height > targetHeight) {
-      targetWidth = frameMeta.width;
-      targetHeight = frameMeta.height;
-    }
-  }
 
-  const MIN_HEIGHT = 1600;
-  if (targetHeight < MIN_HEIGHT) {
-    const factor = MIN_HEIGHT / targetHeight;
-    targetWidth = Math.round(targetWidth * factor);
-    targetHeight = MIN_HEIGHT;
-  }
-
-  let pipeline = processed.resize(targetWidth, targetHeight, { 
-    fit: 'cover', 
-    position: 'centre', 
-    kernel: sharp.kernel.lanczos3 
-  });
-
-  if (targetHeight > cropHeight) {
-    pipeline = pipeline.sharpen({ sigma: 1.0 });
-  }
+  let pipeline = source;
 
   if (frameBuffer) {
     const frame = await sharp(frameBuffer)
-      .resize(targetWidth, targetHeight, { fit: 'fill' })
+      .resize(width, height, { fit: 'fill' })
       .png()
       .toBuffer();
     pipeline = pipeline.composite([{ input: frame, left: 0, top: 0 }]);
@@ -258,16 +200,13 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4', filters = {
     finalFilename,
     finalPath,
     meta: {
-      sourceWidth,
-      sourceHeight,
-      cropWidth,
-      cropHeight,
-      finalWidth: targetWidth,
-      finalHeight: targetHeight,
+      sourceWidth: width,
+      sourceHeight: height,
+      finalWidth: width,
+      finalHeight: height,
       finalBytes: stat.size,
       format: 'jpeg',
       quality: FINAL_JPEG_QUALITY,
-      upscaleFactor: Number((targetHeight / cropHeight).toFixed(2)),
       aspectRatio,
       frameApplied: !!frameBuffer,
     },
@@ -370,11 +309,11 @@ app.get('/api/version', (req, res) => {
 
 app.post('/api/photo/finalize', async (req, res) => {
   try {
-    const { image, code, aspectRatio = '3:4', filters = {} } = req.body;
+    const { image, code, aspectRatio = '3:4' } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     const inputBuffer = decodeDataImage(image);
-    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio, filters });
+    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
     const urls = buildPhotoUrls(req, finalFilename);
 
     res.json({ success: true, data: { ...urls, meta: { ...meta, inputBytes: inputBuffer.length } } });

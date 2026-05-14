@@ -479,29 +479,54 @@
   async function doWebcamCapture() {
     triggerFlash();
 
-    const w = video.videoWidth || 1920;
-    const h = video.videoHeight || 1080;
-    captureCanvas.width  = w;
-    captureCanvas.height = h;
+    const videoW = video.videoWidth || 1920;
+    const videoH = video.videoHeight || 1080;
+    
+    // Alvo de alta resolução (ex: 1600px de altura para garantir nitidez no download)
+    const targetH = 1600;
+    const targetW = aspectRatio === '4:3' ? Math.round(targetH * 4/3) : Math.round(targetH * 3/4);
+    
+    captureCanvas.width  = targetW;
+    captureCanvas.height = targetH;
     const ctx = captureCanvas.getContext('2d', { alpha: false });
 
-    // Configurações para máxima qualidade de captura do canvas
+    // Máxima qualidade de interpolação do navegador (GPU)
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
+    // Calcula o corte (crop) para preencher o canvas (Object Fit Cover manual)
+    const sourceRatio = videoW / videoH;
+    const targetRatio = targetW / targetH;
+    let sw, sh, sx, sy;
+
+    if (sourceRatio > targetRatio) {
+      sh = videoH;
+      sw = sh * targetRatio;
+      sx = (videoW - sw) / 2;
+      sy = 0;
+    } else {
+      sw = videoW;
+      sh = sw / targetRatio;
+      sx = 0;
+      sy = (videoH - sh) / 2;
+    }
+
     ctx.save();
-    // Capturamos SEM filtros do navegador (que são de baixa qualidade)
-    // Os filtros serão aplicados no servidor via Sharp
-    ctx.translate(w, 0);
+    // Aplica os mesmos filtros do preview para o "Save State" ser idêntico
+    ctx.filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
+    
+    // Espelha e desenha com o crop calculado
+    ctx.translate(targetW, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, w, h);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
     ctx.restore();
 
-    // Captura em PNG (sem perdas) para processar no servidor
-    const dataUrl = captureCanvas.toDataURL('image/png');
+    // Captura em JPEG com qualidade máxima (menor chance de artefatos de "pixels rasgados" que o PNG em upscales via CPU)
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.98);
     lastDataUrl = dataUrl;
+    
     setDiagnostics({
-      capture: `${w}x${h}`,
+      capture: `${targetW}x${targetH} (upscaled)`,
       payload: formatBytes(estimateDataUrlBytes(dataUrl)),
       final: 'processando',
       finalFile: '--',
@@ -522,8 +547,7 @@
         body: JSON.stringify({ 
           image: dataUrl, 
           code: sessionCode, 
-          aspectRatio,
-          filters: camFilters // Enviamos os filtros para o servidor
+          aspectRatio
         })
       });
       const data = await resp.json();
