@@ -482,10 +482,14 @@
   const ctrlBrightness = document.getElementById('ctrl-brightness');
   const ctrlContrast   = document.getElementById('ctrl-contrast');
   const ctrlSaturation = document.getElementById('ctrl-saturation');
+  const ctrlPreviewW   = document.getElementById('ctrl-preview-w');
+  const ctrlPreviewH   = document.getElementById('ctrl-preview-h');
   const ctrlZoom       = document.getElementById('ctrl-zoom');
   const valBrightness  = document.getElementById('val-brightness');
   const valContrast    = document.getElementById('val-contrast');
   const valSaturation  = document.getElementById('val-saturation');
+  const valPreviewW    = document.getElementById('val-preview-w');
+  const valPreviewH    = document.getElementById('val-preview-h');
   const valZoom        = document.getElementById('val-zoom');
   const btnResetCam    = document.getElementById('btn-reset-cam');
 
@@ -501,6 +505,14 @@
     valSaturation.textContent = ctrlSaturation.value + '%';
     sendCamControl({ saturation: parseInt(ctrlSaturation.value) });
   });
+  ctrlPreviewW.addEventListener('input', () => {
+    valPreviewW.textContent = ctrlPreviewW.value + 'px';
+    sendCamControl({ previewWidth: parseInt(ctrlPreviewW.value) });
+  });
+  ctrlPreviewH.addEventListener('input', () => {
+    valPreviewH.textContent = ctrlPreviewH.value + 'px';
+    sendCamControl({ previewHeight: parseInt(ctrlPreviewH.value) });
+  });
   ctrlZoom.addEventListener('input', () => {
     valZoom.textContent = ctrlZoom.value + 'x';
     sendCamControl({ zoom: parseFloat(ctrlZoom.value) });
@@ -509,8 +521,10 @@
     ctrlBrightness.value = 0;  valBrightness.textContent = '0';
     ctrlContrast.value = 100;  valContrast.textContent = '100%';
     ctrlSaturation.value = 100; valSaturation.textContent = '100%';
+    ctrlPreviewW.value = 600;  valPreviewW.textContent = '600px';
+    ctrlPreviewH.value = 800;  valPreviewH.textContent = '800px';
     ctrlZoom.value = 1;        valZoom.textContent = '1x';
-    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, zoom: 1 });
+    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, previewWidth: 600, previewHeight: 800, zoom: 1 });
   });
 
   /* ═══ DISCONNECT ═══ */

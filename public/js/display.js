@@ -307,6 +307,10 @@
     if (cmd.contrast   !== undefined) camFilters.contrast   = cmd.contrast;
     if (cmd.saturation !== undefined) camFilters.saturation = cmd.saturation;
     if (cmd.zoom       !== undefined) camZoom = cmd.zoom;
+    
+    if (cmd.previewWidth  !== undefined) stageWrap.style.width  = `${cmd.previewWidth}px`;
+    if (cmd.previewHeight !== undefined) stageWrap.style.height = `${cmd.previewHeight}px`;
+
     const f = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     video.style.filter      = f;
     video.style.transform   = `scale(${camZoom})`;
