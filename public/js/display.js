@@ -489,7 +489,7 @@
     ctx.restore();
     ctx.filter = 'none';
 
-    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.97);
+    const dataUrl = captureCanvas.toDataURL('image/png');
     lastDataUrl = dataUrl;
     setDiagnostics({
       capture: `${w}x${h}`,
@@ -584,9 +584,11 @@
 
   function applyFinalDiagnostics(meta) {
     if (!meta) return;
+    const upscale = meta.upscaleFactor && meta.upscaleFactor > 1 ? ` up${meta.upscaleFactor}x` : '';
+    const crop = meta.cropWidth && meta.cropHeight ? ` (crop ${meta.cropWidth}x${meta.cropHeight})` : '';
     setDiagnostics({
-      final: meta.finalWidth && meta.finalHeight ? `${meta.finalWidth}x${meta.finalHeight}` : '--',
-      finalFile: `${formatBytes(meta.finalBytes)} ${meta.format || ''} q${meta.quality || ''}`.trim(),
+      final: meta.finalWidth && meta.finalHeight ? `${meta.finalWidth}x${meta.finalHeight}${crop}` : '--',
+      finalFile: `${formatBytes(meta.finalBytes)} ${meta.format || ''} q${meta.quality || ''}${upscale}`.trim(),
       payload: meta.inputBytes ? formatBytes(meta.inputBytes) : diagnostics.payload,
     });
   }

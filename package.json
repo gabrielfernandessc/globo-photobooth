@@ -1,6 +1,6 @@
 {
   "name": "globo-photobooth",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Totem de Foto Globo para Eventos Corporativos",
   "main": "server.js",
   "scripts": {

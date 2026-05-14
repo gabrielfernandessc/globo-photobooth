@@ -14,7 +14,12 @@ const io = new Server(server, { maxHttpBufferSize: 20e6 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const sessions = new Map();
-const APP_UPDATED_AT = '2026-05-13T22:56:05-03:00';
+const APP_UPDATED_AT = '2026-05-13T23:03:56-03:00';
+const FINAL_JPEG_QUALITY = 100;
+const MIN_FINAL_SIZE = {
+  '4:5': { width: 1440, height: 1800 },
+  '16:9': { width: 1920, height: 1080 },
+};
 const PHOTO_DIRS = {
   uploads: path.join(__dirname, 'public', 'uploads'),
   original: path.join(__dirname, 'public', 'uploads', 'original'),
@@ -24,8 +29,8 @@ const SONY_SLOT = 1;
 const ENABLE_SONY_SDK = process.env.ENABLE_SONY_SDK === 'true';
 
 app.use(express.static('public'));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use('/uploads', express.static(PHOTO_DIRS.uploads));
 
 function generateCode() {
@@ -179,18 +184,23 @@ async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
 
   const source = sharp(input).rotate();
   const sourceRatio = sourceWidth / sourceHeight;
-  let width;
-  let height;
+  let cropWidth;
+  let cropHeight;
 
   if (sourceRatio > targetRatio) {
-    height = sourceHeight;
-    width = Math.round(height * targetRatio);
+    cropHeight = sourceHeight;
+    cropWidth = Math.round(cropHeight * targetRatio);
   } else {
-    width = sourceWidth;
-    height = Math.round(width / targetRatio);
+    cropWidth = sourceWidth;
+    cropHeight = Math.round(cropWidth / targetRatio);
   }
 
-  let pipeline = source.resize(width, height, { fit: 'cover', position: 'centre', withoutEnlargement: true });
+  const minimum = MIN_FINAL_SIZE[aspectRatio] || MIN_FINAL_SIZE['4:5'];
+  const scale = Math.max(1, minimum.width / cropWidth, minimum.height / cropHeight);
+  const width = Math.round(cropWidth * scale);
+  const height = Math.round(cropHeight * scale);
+
+  let pipeline = source.resize(width, height, { fit: 'cover', position: 'centre', kernel: sharp.kernel.lanczos3 });
   const frameBuffer = getSessionFrame(code, aspectRatio);
 
   if (frameBuffer) {
@@ -205,7 +215,7 @@ async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
   const finalPath = path.join(PHOTO_DIRS.final, finalFilename);
 
   await pipeline
-    .jpeg({ quality: 97, chromaSubsampling: '4:4:4' })
+    .jpeg({ quality: FINAL_JPEG_QUALITY, chromaSubsampling: '4:4:4' })
     .withMetadata()
     .toFile(finalPath);
 
@@ -216,11 +226,14 @@ async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
     meta: {
       sourceWidth,
       sourceHeight,
+      cropWidth,
+      cropHeight,
       finalWidth: width,
       finalHeight: height,
       finalBytes: stat.size,
       format: 'jpeg',
-      quality: 97,
+      quality: FINAL_JPEG_QUALITY,
+      upscaleFactor: Number(scale.toFixed(2)),
       aspectRatio,
       frameApplied: !!frameBuffer,
     },
