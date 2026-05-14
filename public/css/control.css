@@ -244,10 +244,27 @@ html, body {
   color: var(--preto-50);
   text-align: center;
 }
+
+/* ── Sony section header ── */
+.cam-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(5,166,255,.06);
+  border: 1px solid rgba(5,166,255,.15);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+.cam-section-icon { font-size: 22px; }
+.cam-section-title { font-size: 14px; font-weight: 700; color: var(--azul); display: block; }
+.cam-section-sub { font-size: 11px; color: var(--preto-50); display: block; }
+
+/* ── Controls grid ── */
 .cam-control {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .cam-ctrl-row {
   display: flex;
@@ -255,11 +272,13 @@ html, body {
   gap: 8px;
 }
 .cam-label {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--preto);
-  width: 90px;
+  width: 86px;
   flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: .3px;
 }
 .cam-ctrl-row input[type=range] {
   flex: 1;
@@ -269,14 +288,16 @@ html, body {
 .cam-ctrl-row select {
   flex: 1;
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 12px;
   border: 1px solid var(--preto-25);
   border-radius: var(--radius-sm);
-  padding: 4px 8px;
+  padding: 5px 8px;
   color: var(--preto);
   outline: none;
   background: var(--branco);
+  transition: border-color .15s;
 }
+.cam-ctrl-row select:focus { border-color: var(--azul); }
 .cam-val {
   font-size: 12px;
   color: var(--azul);
@@ -284,6 +305,79 @@ html, body {
   min-width: 36px;
   text-align: right;
 }
+
+/* ── Status indicator ── */
+.cam-status {
+  font-size: 12px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--preto-25);
+}
+.cam-status-ok { color: #00A86B; }
+.cam-status-err { color: var(--vermelho); }
+
+/* ── Focus buttons ── */
+.cam-focus-section {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.focus-buttons {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+.focus-btn {
+  flex: 1;
+  padding: 10px 2px;
+  border: 1px solid var(--preto-25);
+  border-radius: var(--radius-sm);
+  background: var(--branco);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--preto-50);
+  cursor: pointer;
+  transition: all .15s;
+  text-align: center;
+  min-width: 0;
+}
+.focus-btn:hover { border-color: var(--azul); color: var(--azul); }
+.focus-btn:active { transform: scale(.93); }
+.focus-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* AF button highlighted */
+.focus-btn-af {
+  background: var(--azul);
+  border-color: var(--azul);
+  color: var(--branco);
+  font-size: 13px;
+  font-weight: 800;
+  min-width: 44px;
+}
+.focus-btn-af:hover { background: var(--azul-profundo); }
+
+/* ── Divider ── */
+.cam-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 8px;
+  font-size: 11px;
+  color: var(--preto-25);
+  text-transform: uppercase;
+  letter-spacing: .8px;
+}
+.cam-divider::before,
+.cam-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--preto-5);
+}
+
 .cam-note {
   font-size: 11px;
   color: var(--preto-25);

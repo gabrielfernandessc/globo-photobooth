@@ -41,20 +41,7 @@
   const galleryGrid   = document.getElementById('gallery-grid');
   const noPhotos      = document.getElementById('no-photos');
 
-  /* ── DOM: Camera controls ── */
-  const ctrlBrightness = document.getElementById('ctrl-brightness');
-  const ctrlContrast   = document.getElementById('ctrl-contrast');
-  const ctrlSaturation = document.getElementById('ctrl-saturation');
-  const ctrlFocusMode  = document.getElementById('ctrl-focus-mode');
-  const ctrlFocusDist  = document.getElementById('ctrl-focus-distance');
-  const focusDistRow   = document.getElementById('focus-distance-row');
-  const ctrlZoom       = document.getElementById('ctrl-zoom');
-  const valBrightness  = document.getElementById('val-brightness');
-  const valContrast    = document.getElementById('val-contrast');
-  const valSaturation  = document.getElementById('val-saturation');
-  const valFocus       = document.getElementById('val-focus');
-  const valZoom        = document.getElementById('val-zoom');
-  const btnResetCam    = document.getElementById('btn-reset-cam');
+  /* ── DOM: Camera controls (CSS filter refs moved to camera section) ── */
 
   /* ── State ── */
   let sessionCode     = null;
@@ -335,78 +322,173 @@
     socket.emit('cam-control', { code: sessionCode, cmd });
   }
 
-  let gphotoMode = false;
+  /* ── Sony gphoto2 real controls ── */
+
+  // Load on first Camera tab click + on explicit reload
+  let gphotoLoaded = false;
+
   document.getElementById('tab-camera').addEventListener('click', () => {
-    if (!gphotoMode) loadGphotoStatus();
+    if (!gphotoLoaded) loadSonyControls();
   }, { once: true });
 
-  async function loadGphotoStatus() {
-    try {
-      const r = await fetch('/api/gphoto/status');
-      const d = await r.json();
-      if (d.available) {
-        gphotoMode = true;
-        renderGphotoControls(d.camera);
-      }
-    } catch {}
+  const btnReloadConfigs = document.getElementById('btn-reload-configs');
+  if (btnReloadConfigs) {
+    btnReloadConfigs.addEventListener('click', () => loadSonyControls());
   }
 
-  async function renderGphotoControls(cameraName) {
-    const panel = document.getElementById('panel-camera');
-    panel.innerHTML = `
-      <p class="camera-hint" style="color:var(--azul);font-weight:600">🎛 ${cameraName}</p>
-      <p class="camera-hint">Configurações reais da câmera Sony via USB.</p>
-      <div class="cam-control" id="sony-controls">
-        <p style="font-size:13px;color:var(--preto-50);text-align:center">Carregando…</p>
-      </div>
-    `;
+  async function loadSonyControls() {
+    const sonySection = document.getElementById('sony-section');
+    const camDivider  = document.getElementById('cam-divider');
+    const sonyControls = document.getElementById('sony-controls');
 
-    const keys = ['iso', 'shutter', 'aperture', 'wb', 'ev', 'focus'];
-    const labels = { iso: 'ISO', shutter: 'Velocidade', aperture: 'Abertura', wb: 'Bal. Branco', ev: 'Exp. Comp.', focus: 'Foco' };
-    const container = document.getElementById('sony-controls');
-    container.innerHTML = '';
+    try {
+      // First check if gphoto2/camera is available
+      const statusResp = await fetch('/api/gphoto/status');
+      const statusData = await statusResp.json();
 
-    for (const key of keys) {
-      try {
-        const r = await fetch(`/api/gphoto/config/${key}`);
-        const d = await r.json();
-        if (!d.choices || d.choices.length === 0) continue;
+      if (!statusData.available) {
+        sonySection.style.display = 'none';
+        camDivider.style.display = 'none';
+        document.getElementById('css-hint').textContent = 'Nenhuma câmera Sony detectada. Usando filtros visuais.';
+        return;
+      }
+
+      // Camera detected — show Sony section
+      const camName = statusData.camera.split(' — ')[0] || 'Sony Camera';
+      document.getElementById('sony-camera-name').textContent = camName;
+      sonySection.style.display = 'block';
+      camDivider.style.display = 'block';
+
+      // Load all configs in one bulk request
+      sonyControls.innerHTML = '<p style="font-size:12px;color:var(--preto-50);text-align:center">Carregando…</p>';
+
+      const resp = await fetch('/api/gphoto/all-configs');
+      const configs = await resp.json();
+
+      sonyControls.innerHTML = '';
+
+      // Priority order for display
+      const order = ['iso', 'aperture', 'shutter', 'ev', 'wb', 'focus', 'flash', 'metering', 'drive', 'quality', 'effect'];
+
+      for (const key of order) {
+        const cfg = configs[key];
+        if (!cfg || !cfg.choices || cfg.choices.length === 0) continue;
 
         const row = document.createElement('div');
         row.className = 'cam-ctrl-row';
+
+        const label = document.createElement('span');
+        label.className = 'cam-label';
+        label.textContent = cfg.label;
+
         const sel = document.createElement('select');
         sel.id = `gp-${key}`;
-        d.choices.forEach(ch => {
+        cfg.choices.forEach(ch => {
           const opt = document.createElement('option');
-          opt.value = ch; opt.textContent = ch;
-          if (ch === d.current) opt.selected = true;
+          opt.value = ch;
+          opt.textContent = ch;
+          if (ch === cfg.current) opt.selected = true;
           sel.appendChild(opt);
         });
-        sel.addEventListener('change', () => setGphotoConfig(key, sel.value));
-        row.innerHTML = `<span class="cam-label">${labels[key]}</span>`;
+
+        // Status indicator
+        const status = document.createElement('span');
+        status.className = 'cam-status';
+        status.textContent = '';
+
+        sel.addEventListener('change', async () => {
+          status.textContent = '…';
+          status.className = 'cam-status';
+          try {
+            const r = await fetch(`/api/gphoto/config/${key}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ value: sel.value })
+            });
+            const d = await r.json();
+            if (d.success) {
+              status.textContent = '✓';
+              status.className = 'cam-status cam-status-ok';
+              setTimeout(() => { status.textContent = ''; }, 1500);
+            } else {
+              status.textContent = '✗';
+              status.className = 'cam-status cam-status-err';
+            }
+          } catch {
+            status.textContent = '✗';
+            status.className = 'cam-status cam-status-err';
+          }
+        });
+
+        row.appendChild(label);
         row.appendChild(sel);
-        container.appendChild(row);
-      } catch {}
-    }
+        row.appendChild(status);
+        sonyControls.appendChild(row);
+      }
 
-    const resetRow = document.createElement('div');
-    resetRow.innerHTML = `<button class="btn btn-outline btn-sm" onclick="location.reload()">Recarregar configs</button>`;
-    container.appendChild(resetRow);
-  }
+      if (sonyControls.children.length === 0) {
+        sonyControls.innerHTML = '<p style="font-size:12px;color:var(--preto-50);text-align:center">Nenhuma configuração disponível.</p>';
+      }
 
-  async function setGphotoConfig(key, value) {
-    try {
-      await fetch(`/api/gphoto/config/${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value })
-      });
+      gphotoLoaded = true;
+
     } catch (err) {
-      console.error('Config error:', err);
+      console.error('Sony controls load error:', err);
+      sonySection.style.display = 'none';
+      camDivider.style.display = 'none';
     }
   }
 
-  // CSS filter controls (fallback for webcam mode)
+  /* ── Autofocus trigger ── */
+  const btnAutofocus = document.getElementById('btn-autofocus');
+  if (btnAutofocus) {
+    btnAutofocus.addEventListener('click', async () => {
+      btnAutofocus.textContent = '…';
+      btnAutofocus.disabled = true;
+      vibrate(30);
+      try {
+        const r = await fetch('/api/gphoto/autofocus', { method: 'POST' });
+        const d = await r.json();
+        btnAutofocus.textContent = d.success ? '✓' : '✗';
+        setTimeout(() => { btnAutofocus.textContent = 'AF'; }, 1200);
+      } catch {
+        btnAutofocus.textContent = '✗';
+        setTimeout(() => { btnAutofocus.textContent = 'AF'; }, 1200);
+      } finally {
+        btnAutofocus.disabled = false;
+      }
+    });
+  }
+
+  /* ── Manual focus step buttons ── */
+  document.querySelectorAll('.focus-btn[data-focus]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const direction = btn.dataset.focus;
+      const orig = btn.textContent;
+      btn.disabled = true;
+      vibrate(20);
+      try {
+        await fetch('/api/gphoto/manual-focus', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction })
+        });
+      } catch { /* best effort */ }
+      btn.disabled = false;
+    });
+  });
+
+  /* ── CSS filter controls (always available) ── */
+  const ctrlBrightness = document.getElementById('ctrl-brightness');
+  const ctrlContrast   = document.getElementById('ctrl-contrast');
+  const ctrlSaturation = document.getElementById('ctrl-saturation');
+  const ctrlZoom       = document.getElementById('ctrl-zoom');
+  const valBrightness  = document.getElementById('val-brightness');
+  const valContrast    = document.getElementById('val-contrast');
+  const valSaturation  = document.getElementById('val-saturation');
+  const valZoom        = document.getElementById('val-zoom');
+  const btnResetCam    = document.getElementById('btn-reset-cam');
+
   ctrlBrightness.addEventListener('input', () => {
     valBrightness.textContent = ctrlBrightness.value;
     sendCamControl({ brightness: parseFloat(ctrlBrightness.value) });
@@ -419,15 +501,6 @@
     valSaturation.textContent = ctrlSaturation.value + '%';
     sendCamControl({ saturation: parseInt(ctrlSaturation.value) });
   });
-  ctrlFocusMode.addEventListener('change', () => {
-    const manual = ctrlFocusMode.value === 'manual';
-    focusDistRow.style.display = manual ? 'flex' : 'none';
-    sendCamControl({ focusMode: ctrlFocusMode.value });
-  });
-  ctrlFocusDist.addEventListener('input', () => {
-    valFocus.textContent = ctrlFocusDist.value;
-    sendCamControl({ focusDistance: parseInt(ctrlFocusDist.value) });
-  });
   ctrlZoom.addEventListener('input', () => {
     valZoom.textContent = ctrlZoom.value + 'x';
     sendCamControl({ zoom: parseFloat(ctrlZoom.value) });
@@ -437,7 +510,6 @@
     ctrlContrast.value = 100;  valContrast.textContent = '100%';
     ctrlSaturation.value = 100; valSaturation.textContent = '100%';
     ctrlZoom.value = 1;        valZoom.textContent = '1x';
-    ctrlFocusMode.value = ''; focusDistRow.style.display = 'none';
     sendCamControl({ brightness: 0, contrast: 100, saturation: 100, zoom: 1 });
   });
 

@@ -177,16 +177,30 @@ app.post('/api/gphoto/capture', async (req, res) => {
   }
 });
 
+/* All allowed gphoto2 config keys for Sony A7III */
+const GPHOTO_CONFIGS = {
+  iso:       '/main/imgsettings/iso',
+  aperture:  '/main/capturesettings/f-number',
+  shutter:   '/main/capturesettings/shutterspeed',
+  wb:        '/main/imgsettings/whitebalance',
+  ev:        '/main/capturesettings/exposurecompensation',
+  focus:     '/main/capturesettings/focusmode',
+  flash:     '/main/capturesettings/flashmode',
+  quality:   '/main/imgsettings/imagequality',
+  drive:     '/main/capturesettings/drivemode',
+  metering:  '/main/capturesettings/meteringmode',
+  effect:    '/main/capturesettings/expprogram',
+};
+
+const GPHOTO_LABELS = {
+  iso: 'ISO', aperture: 'Abertura (f/)', shutter: 'Velocidade', wb: 'Bal. Branco',
+  ev: 'Compensação EV', focus: 'Modo de Foco', flash: 'Flash',
+  quality: 'Qualidade', drive: 'Modo Disparo', metering: 'Medição', effect: 'Programa',
+};
+
+// Get single config
 app.get('/api/gphoto/config/:key', async (req, res) => {
-  const allowed = {
-    iso:      '/main/imgsettings/iso',
-    aperture: '/main/capturesettings/f-number',
-    shutter:  '/main/capturesettings/shutterspeed',
-    wb:       '/main/imgsettings/whitebalance',
-    ev:       '/main/capturesettings/exposurecompensation',
-    focus:    '/main/capturesettings/focusmode',
-  };
-  const config = allowed[req.params.key];
+  const config = GPHOTO_CONFIGS[req.params.key];
   if (!config) return res.status(400).json({ error: 'Unknown config' });
 
   try {
@@ -199,16 +213,26 @@ app.get('/api/gphoto/config/:key', async (req, res) => {
   }
 });
 
+// Get ALL configs in one request (bulk loader for Camera tab)
+app.get('/api/gphoto/all-configs', async (req, res) => {
+  const results = {};
+  for (const [key, configPath] of Object.entries(GPHOTO_CONFIGS)) {
+    try {
+      const { stdout } = await execAsync(`gphoto2 --get-config "${configPath}" 2>&1`, { timeout: 3000 });
+      const current = (stdout.match(/Current:\s*(.+)/) || [])[1]?.trim();
+      const choices = [...stdout.matchAll(/Choice:\s*\d+\s+(.+)/g)].map(m => m[1].trim());
+      if (choices.length > 0) {
+        results[key] = { current, choices, label: GPHOTO_LABELS[key] || key };
+      }
+    } catch { /* config not supported by this camera — skip */ }
+  }
+  res.json(results);
+});
+
+
+// Set config
 app.post('/api/gphoto/config/:key', async (req, res) => {
-  const allowed = {
-    iso:      '/main/imgsettings/iso',
-    aperture: '/main/capturesettings/f-number',
-    shutter:  '/main/capturesettings/shutterspeed',
-    wb:       '/main/imgsettings/whitebalance',
-    ev:       '/main/capturesettings/exposurecompensation',
-    focus:    '/main/capturesettings/focusmode',
-  };
-  const config = allowed[req.params.key];
+  const config = GPHOTO_CONFIGS[req.params.key];
   if (!config) return res.status(400).json({ error: 'Unknown config' });
 
   const { value } = req.body;
@@ -221,6 +245,49 @@ app.post('/api/gphoto/config/:key', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Trigger autofocus (one-shot AF)
+app.post('/api/gphoto/autofocus', async (req, res) => {
+  try {
+    await execAsync('gphoto2 --set-config /main/actions/autofocusdrive=1', { timeout: 5000 });
+    res.json({ success: true });
+  } catch (err) {
+    // Some cameras use a different path
+    try {
+      await execAsync('gphoto2 --set-config autofocusdrive=1', { timeout: 5000 });
+      res.json({ success: true });
+    } catch (err2) {
+      res.status(500).json({ error: err2.message });
+    }
+  }
+});
+
+// Manual focus step: near (-3 to -1) or far (1 to 3)
+app.post('/api/gphoto/manual-focus', async (req, res) => {
+  const { direction } = req.body; // 'near-fine', 'near', 'near-coarse', 'far-fine', 'far', 'far-coarse'
+  const steps = {
+    'near-fine': 1, 'near': 2, 'near-coarse': 3,
+    'far-fine': 4,  'far': 5,  'far-coarse': 6,
+    // Some cameras use negative values
+    'near-1': -1, 'near-2': -2, 'near-3': -3,
+    'far-1': 1,   'far-2': 2,   'far-3': 3,
+  };
+  const step = steps[direction];
+  if (step === undefined) return res.status(400).json({ error: 'Invalid direction' });
+
+  try {
+    await execAsync(`gphoto2 --set-config /main/actions/manualfocusdrive=${step}`, { timeout: 3000 });
+    res.json({ success: true });
+  } catch (err) {
+    try {
+      await execAsync(`gphoto2 --set-config manualfocusdrive=${step}`, { timeout: 3000 });
+      res.json({ success: true });
+    } catch (err2) {
+      res.status(500).json({ error: err2.message });
+    }
+  }
+});
+
 
 
 /* ═══════════════════════════════════════════════════════
