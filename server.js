@@ -196,21 +196,18 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
   const finalPath = path.join(PHOTO_DIRS.final, finalFilename);
   const downloadPath = path.join(PHOTO_DIRS.downloads, finalFilename);
 
-  // Buffer processado para salvar em dois lugares
-  const finalBuffer = await pipeline
+  // Salva no servidor (para o QR Code) de forma assíncrona para não travar
+  await pipeline
     .jpeg({ quality: FINAL_JPEG_QUALITY, chromaSubsampling: '4:4:4' })
     .withMetadata()
-    .toBuffer();
+    .toFile(finalPath);
 
-  // Salva no servidor (para o QR Code)
-  fs.writeFileSync(finalPath, finalBuffer);
-
-  // Salva na pasta Downloads (cópia automática para o usuário)
-  try {
-    fs.writeFileSync(downloadPath, finalBuffer);
-  } catch (err) {
-    console.error('Erro ao salvar cópia em Downloads:', err);
-  }
+  // Salva na pasta Downloads em background (sem dar await para não atrasar a resposta da API)
+  fs.mkdir(PHOTO_DIRS.downloads, { recursive: true }, () => {
+    fs.copyFile(finalPath, downloadPath, (err) => {
+      if (err) console.error('Erro ao copiar para Downloads:', err);
+    });
+  });
 
   const stat = fs.statSync(finalPath);
   return {

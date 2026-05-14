@@ -688,6 +688,14 @@
     btnDownload.onclick = () => {
       window.open(url, '_blank', 'noopener');
     };
+    
+    // Auto-download (dispara sem precisar clicar)
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `globo_foto_${Date.now()}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   function applyFinalDiagnostics(meta) {
