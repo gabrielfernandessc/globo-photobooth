@@ -13,14 +13,19 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 20e6 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
+const os = require('os');
+
 const sessions = new Map();
 const APP_UPDATED_AT = '2026-05-13T23:03:56-03:00';
 const FINAL_JPEG_QUALITY = 100;
+
+const DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads', 'Globo-Photobooth');
 
 const PHOTO_DIRS = {
   uploads: path.join(__dirname, 'public', 'uploads'),
   original: path.join(__dirname, 'public', 'uploads', 'original'),
   final: path.join(__dirname, 'public', 'uploads', 'final'),
+  downloads: DOWNLOADS_DIR,
 };
 const SONY_SLOT = 1;
 const ENABLE_SONY_SDK = process.env.ENABLE_SONY_SDK === 'true';
@@ -189,11 +194,23 @@ async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
 
   const finalFilename = `globo_final_${Date.now()}_${aspectRatio.replace(':', 'x')}.jpg`;
   const finalPath = path.join(PHOTO_DIRS.final, finalFilename);
+  const downloadPath = path.join(PHOTO_DIRS.downloads, finalFilename);
 
-  await pipeline
+  // Buffer processado para salvar em dois lugares
+  const finalBuffer = await pipeline
     .jpeg({ quality: FINAL_JPEG_QUALITY, chromaSubsampling: '4:4:4' })
     .withMetadata()
-    .toFile(finalPath);
+    .toBuffer();
+
+  // Salva no servidor (para o QR Code)
+  fs.writeFileSync(finalPath, finalBuffer);
+
+  // Salva na pasta Downloads (cópia automática para o usuário)
+  try {
+    fs.writeFileSync(downloadPath, finalBuffer);
+  } catch (err) {
+    console.error('Erro ao salvar cópia em Downloads:', err);
+  }
 
   const stat = fs.statSync(finalPath);
   return {
