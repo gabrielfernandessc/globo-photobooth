@@ -19,7 +19,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 const sessions = new Map();
 
 app.use(express.static('public'));
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -32,22 +34,26 @@ function generateCode() {
 
 /* ── REST API ─────────────────────────────────────────── */
 
-// Upload photo to ImgBB (proxy to hide API key)
+// Upload photo locally to avoid ImgBB compression
 app.post('/api/upload', async (req, res) => {
   try {
     const { image } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
-    const params = new URLSearchParams();
-    params.append('image', image);
-    params.append('key', process.env.IMGBB_API_KEY);
+    const uploadsDir = path.join(__dirname, 'public', 'uploads');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-    const response = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      body: params
-    });
-    const data = await response.json();
-    res.json(data);
+    const filename = `globo_foto_${Date.now()}.jpg`;
+    const filepath = path.join(uploadsDir, filename);
+
+    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filepath, buffer);
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const url = `${protocol}://${req.get('host')}/uploads/${filename}`;
+    
+    res.json({ success: true, data: { url, image: { url } } });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
@@ -170,16 +176,19 @@ app.post('/api/sony/capture', async (req, res) => {
     const buffer = await downloadRes.arrayBuffer();
     const imageData = Buffer.from(buffer).toString('base64');
 
-    // Upload to ImgBB
-    const params = new URLSearchParams();
-    params.append('image', imageData);
-    params.append('key', process.env.IMGBB_API_KEY);
+    // Save locally instead of ImgBB to preserve full 24MP quality
+    const uploadsDir = path.join(__dirname, 'public', 'uploads');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-    const response = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: params });
-    const data = await response.json();
+    const filename = `sony_alta_${Date.now()}.jpg`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, Buffer.from(buffer));
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const url = `${protocol}://${req.get('host')}/uploads/${filename}`;
 
     sonyCapturing = false;
-    res.json(data);
+    res.json({ success: true, data: { url, image: { url } } });
   } catch (err) {
     sonyCapturing = false;
     console.error('Sony capture error:', err.message);
