@@ -479,8 +479,8 @@
   async function doWebcamCapture() {
     triggerFlash();
 
-    const w = video.videoWidth || video.offsetWidth || 1920;
-    const h = video.videoHeight || video.offsetHeight || 1080;
+    const w = video.videoWidth || 1920;
+    const h = video.videoHeight || 1080;
     captureCanvas.width  = w;
     captureCanvas.height = h;
     const ctx = captureCanvas.getContext('2d');
@@ -493,7 +493,7 @@
     ctx.restore();
     ctx.filter = 'none';
 
-    const dataUrl = captureCanvas.toDataURL('image/png');
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 1.0);
     lastDataUrl = dataUrl;
     setDiagnostics({
       capture: `${w}x${h}`,
