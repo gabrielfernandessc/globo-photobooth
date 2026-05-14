@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>Controle — Globo Photo Booth</title>
+  <title>Controle — Fotoboarding</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/design-system.css">
@@ -15,23 +15,13 @@
     <!-- Globo logo -->
     <div style="background:rgba(0,59,113,.08);border-radius:50%;padding:14px;display:flex;align-items:center;justify-content:center">
       <svg width="40" height="40" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <g clip-path="url(#cp)">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500Z" fill="#003B71"/>
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="white"/>
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M250 335.714C297.335 335.714 335.714 297.335 335.714 250C335.714 202.665 297.335 164.286 250 164.286C202.665 164.286 164.286 202.665 164.286 250C164.286 297.335 202.665 335.714 250 335.714Z" fill="url(#gp)"/>
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M192.857 250H107.143C107.143 171.102 171.102 107.143 250 107.143V192.857C218.442 192.857 192.857 218.442 192.857 250Z" fill="white"/>
-        </g>
-        <defs>
-          <linearGradient id="gp" x1="164.286" y1="250" x2="335.714" y2="250" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#05A6FF"/><stop offset="1" stop-color="#086DFF"/>
-          </linearGradient>
-          <clipPath id="cp"><rect width="500" height="500" fill="white"/></clipPath>
-        </defs>
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500ZM250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="#003B71"/>
+        <circle cx="250" cy="250" r="85.714" fill="#003B71"/>
       </svg>
     </div>
 
     <div class="pair-header">
-      <span class="pair-logo">Foto Totem</span>
+      <span class="pair-logo">Fotoboarding</span>
       <span class="pair-sub">Controle remoto · Globo</span>
     </div>
     <p class="pair-title">Digite o código do totem</p>
@@ -56,7 +46,7 @@
         <span class="status-dot" id="ctrl-dot"></span>
         <span id="ctrl-status-text">Conectado</span>
       </div>
-      <span class="ctrl-logo">Foto Totem</span>
+      <span class="ctrl-logo">Fotoboarding</span>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="ctrl-count" id="ctrl-count">0 fotos</span>
         <button class="btn-disconnect-small" id="btn-disconnect" title="Desconectar">
@@ -94,16 +84,16 @@
       <div class="setting-block">
         <span class="setting-label">Orientação</span>
         <div class="pills">
-          <button class="pill active" data-ratio="4:5" id="r45">Em pé (4:5)</button>
-          <button class="pill" data-ratio="16:9" id="r169">Deitado (16:9)</button>
+          <button class="pill active" data-ratio="3:4" id="r34">Em pé (3:4)</button>
+          <button class="pill" data-ratio="4:3" id="r43">Deitado (4:3)</button>
         </div>
       </div>
 
       <div class="setting-block">
         <span class="setting-label">Moldura (PNG)</span>
         <div class="pills">
-          <button class="pill frame-btn" id="btn-frame-4x5" data-ratio="4:5">Enviar em pé</button>
-          <button class="pill frame-btn" id="btn-frame-16x9" data-ratio="16:9">Enviar deitado</button>
+          <button class="pill frame-btn" id="btn-frame-3x4" data-ratio="3:4">Enviar em pé</button>
+          <button class="pill frame-btn" id="btn-frame-4x3" data-ratio="4:3">Enviar deitado</button>
         </div>
         <input type="file" id="frame-input" accept="image/png" style="display:none">
       </div>

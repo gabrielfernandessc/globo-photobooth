@@ -33,8 +33,8 @@
   const btnNext       = document.getElementById('btn-next');
   const timerPills    = document.querySelectorAll('[data-timer]');
   const ratioPills    = document.querySelectorAll('[data-ratio]:not(.frame-btn)');
-  const btnFrame4x5   = document.getElementById('btn-frame-4x5');
-  const btnFrame16x9  = document.getElementById('btn-frame-16x9');
+  const btnFrame3x4   = document.getElementById('btn-frame-3x4');
+  const btnFrame4x3  = document.getElementById('btn-frame-4x3');
   const frameInput    = document.getElementById('frame-input');
 
   /* ── DOM: Gallery ── */
@@ -46,7 +46,7 @@
   /* ── State ── */
   let sessionCode     = null;
   let selectedTimer   = 3;
-  let selectedRatio   = '4:5';
+  let selectedRatio   = '3:4';
   let pendingFrameRatio = null;
   let photoLog        = [];
   let photoTotal      = 0;
@@ -282,7 +282,7 @@
 
   /* ═══ FRAME UPLOAD ═══ */
 
-  [btnFrame4x5, btnFrame16x9].forEach(btn => {
+  [btnFrame3x4, btnFrame4x3].forEach(btn => {
     btn.addEventListener('click', () => {
       pendingFrameRatio = btn.dataset.ratio;
       frameInput.click();
@@ -292,7 +292,7 @@
   frameInput.addEventListener('change', async () => {
     const file = frameInput.files[0];
     if (!file || !sessionCode || !pendingFrameRatio) return;
-    const btn = pendingFrameRatio === '4:5' ? btnFrame4x5 : btnFrame16x9;
+    const btn = pendingFrameRatio === '3:4' ? btnFrame3x4 : btnFrame4x3;
     const orig = btn.textContent;
     btn.textContent = 'Enviando…';
     btn.disabled = true;

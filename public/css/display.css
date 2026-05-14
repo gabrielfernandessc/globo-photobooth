@@ -8,8 +8,8 @@
 html, body {
   height: 100%; width: 100%;
   overflow: hidden;
-  background: #003B71;
-  color: #FFFFFF;
+  background: #FFFFFF;
+  color: #333333;
   margin: 0; padding: 0;
   font-family: 'Inter', system-ui, sans-serif;
 }
@@ -18,7 +18,7 @@ html, body {
   width: 100vw; height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(160deg, #003B71 0%, #0055A5 50%, #05A6FF 100%);
+  background: #FFFFFF;
   position: relative;
   overflow: hidden;
 }
@@ -27,7 +27,7 @@ html, body {
 .multicolor-bar {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: 5px;
+  height: 12px;
   background: linear-gradient(90deg,
     #003B71 0%, #05A6FF 20%, #00C4A7 35%,
     #86DD00 50%, #FFD100 65%, #FF7A00 80%, #FF0C1F 100%
@@ -53,8 +53,8 @@ html, body {
   animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.booting-msg { font-size: 20px; font-weight: 700; color: #fff; margin: 0; }
-.booting-sub  { font-size: 14px; color: rgba(255,255,255,.7); margin: 0; }
+.booting-msg { font-size: 20px; font-weight: 700; color: #003B71; margin: 0; }
+.booting-sub  { font-size: 14px; color: #666; margin: 0; }
 
 /* ════════════════ PREVIEW ════════════════ */
 .state-preview { flex-direction: column; align-items: stretch; justify-content: flex-start; z-index: 1; }
@@ -64,7 +64,7 @@ html, body {
   position: absolute; top: 0; left: 0; right: 0; z-index: 20;
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 22px;
-  background: linear-gradient(to bottom, rgba(0,20,70,.65) 0%, transparent 100%);
+  background: linear-gradient(to bottom, rgba(255,255,255,0.95) 0%, transparent 100%);
 }
 .header-brand { display: flex; align-items: center; gap: 12px; }
 .header-logo-wrap {
@@ -72,30 +72,30 @@ html, body {
   box-shadow: 0 2px 12px rgba(0,0,0,.2);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.header-title h1  { font-size: 17px; font-weight: 700; color: #fff; margin: 0; line-height: 1.2; }
-.header-title .subtitle { font-size: 11px; color: rgba(255,255,255,.75); display: block; }
+.header-title h1  { font-size: 17px; font-weight: 700; color: #003B71; margin: 0; line-height: 1.2; }
+.header-title .subtitle { font-size: 11px; color: #666; display: block; }
 .header-code-pill {
-  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.3);
+  background: #F0F4F8; border: 1px solid #D1DDE8;
   border-radius: 999px; padding: 6px 14px;
-  display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,.9); font-size: 12px;
+  display: flex; align-items: center; gap: 8px; color: #003B71; font-size: 12px;
 }
-.header-code-pill .code-label { color: rgba(255,255,255,.6); font-size: 11px; }
-.header-code-pill .code-val   { font-size: 18px; font-weight: 800; letter-spacing: .25em; }
+.header-code-pill .code-label { color: #555; font-size: 11px; }
+.header-code-pill .code-val   { font-size: 18px; font-weight: 800; letter-spacing: .25em; color: #003B71; }
 .header-status-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(255,255,255,.25); transition: all .3s;
 }
 .header-status-dot.connected { background: #4ADE80; box-shadow: 0 0 6px rgba(74,222,128,.5); }
-.fs-btn { background: none; border: none; cursor: pointer; padding: 6px; color: rgba(255,255,255,.5); display: flex; align-items: center; transition: color .15s; }
-.fs-btn:hover { color: rgba(255,255,255,.9); }
+.fs-btn { background: none; border: none; cursor: pointer; padding: 6px; color: #999; display: flex; align-items: center; transition: color .15s; }
+.fs-btn:hover { color: #003B71; }
 .header-photo-count {
-  background: rgba(255,255,255,.1);
-  border: 1px solid rgba(255,255,255,.2);
+  background: #F0F4F8;
+  border: 1px solid #D1DDE8;
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255,255,255,.85);
+  color: #003B71;
   letter-spacing: .02em;
 }
 
@@ -123,7 +123,7 @@ html, body {
    #frame-overlay → position:absolute inset:0 w:100% h:100% object-cover z-10
 
    REGRA: o frame PNG enviado pelo controle DEVE ter o mesmo aspect ratio
-   do modo selecionado (4:5 para portrait, 16:9 para landscape).
+   do modo selecionado (3:4 para portrait, 4:3 para landscape).
    Assim object-cover não corta nada — apenas escala uniformemente.
    ══════════════════════════════════════════════ */
 
@@ -143,12 +143,13 @@ html, body {
   width: 100%;
   overflow: hidden;
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.4), 0 0 0 12px #fff, 0 28px 72px rgba(0,0,0,.35);
+  box-shadow: 0 24px 64px rgba(0, 59, 113, 0.12), 0 8px 24px rgba(0, 59, 113, 0.06);
+  border: 1px solid rgba(0, 59, 113, 0.08);
   background: #000;
 }
 /* ring-shadow = borda branca (white border como fotototem-ref) */
-.stage-card[data-ratio="4:5"]  { aspect-ratio: 4/5; }
-.stage-card[data-ratio="16:9"] { aspect-ratio: 16/9; }
+.stage-card[data-ratio="3:4"]  { aspect-ratio: 3/4; }
+.stage-card[data-ratio="4:3"] { aspect-ratio: 4/3; }
 
 /* Câmera: position absolute, preenche tudo, sem distorcer (object-cover) */
 /* Idêntico ao: className="absolute top-0 left-0 w-full h-full object-cover -scale-x-100" */
@@ -165,7 +166,7 @@ html, body {
 #frame-overlay {
   position: absolute;
   top: 0; left: 0; width: 100%; height: 100%;
-  object-fit: fill; /* force stretch to match container, exactly like ctx.drawImage */
+  object-fit: cover; /* prevents any distortion */
   pointer-events: none;
   z-index: 10;
   opacity: 0;
@@ -219,20 +220,20 @@ html, body {
 @keyframes flashEffect { 0% { opacity: .9; } 100% { opacity: 0; } }
 
 /* Text panel lateral */
-.preview-text-panel { flex: 1; max-width: 400px; display: flex; flex-direction: column; gap: 18px; color: #fff; }
+.preview-text-panel { flex: 1; max-width: 400px; display: flex; flex-direction: column; gap: 18px; color: #003B71; }
 .sparkle-pill {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.12);
-  font-size: 12px; color: rgba(255,255,255,.9); font-weight: 500; width: fit-content;
+  padding: 6px 14px; border-radius: 999px; background: #F0F4F8;
+  font-size: 12px; color: #05A6FF; font-weight: 600; width: fit-content;
 }
 .preview-headline { font-size: clamp(26px, 3.2vw, 42px); font-weight: 800; line-height: 1.15; margin: 0; }
-.preview-subtext   { font-size: 14px; color: rgba(255,255,255,.8); line-height: 1.6; margin: 0; }
-.preview-hint      { font-size: 12px; color: rgba(255,255,255,.6); margin: 0; }
+.preview-subtext   { font-size: 14px; color: #555; line-height: 1.6; margin: 0; }
+.preview-hint      { font-size: 12px; color: #888; margin: 0; }
 
 /* ════════════════ RESULT ════════════════ */
 .state-result {
   position: fixed; inset: 0; z-index: 100;
-  background: linear-gradient(160deg, #003B71 0%, #0055A5 50%, #05A6FF 100%);
+  background: #FFFFFF;
   flex-direction: row; align-items: center; justify-content: center;
   gap: 56px; padding: 48px;
 }
@@ -241,17 +242,17 @@ html, body {
 .result-photo-panel { flex: 1; display: flex; justify-content: flex-end; align-items: center; max-width: 500px; }
 .result-photo-panel img {
   width: 100%; max-width: 440px; height: auto;
-  border-radius: 6px; border: 14px solid #fff;
-  box-shadow: 0 40px 100px rgba(0,0,0,.5);
+  border-radius: 12px; border: 1px solid rgba(0, 59, 113, 0.08);
+  box-shadow: 0 24px 64px rgba(0, 59, 113, 0.12), 0 8px 24px rgba(0, 59, 113, 0.06);
   transform: rotate(1deg); transition: transform .3s;
   object-fit: contain; /* foto não é cortada — exibe naturalmente */
 }
 .result-photo-panel img:hover { transform: rotate(0deg); }
 
 /* QR panel */
-.result-qr-panel { flex: 1; max-width: 360px; display: flex; flex-direction: column; gap: 16px; color: #fff; }
-.qr-title { font-size: clamp(26px, 3.2vw, 40px); font-weight: 800; margin: 0; }
-.qr-body  { font-size: 14px; color: rgba(255,255,255,.8); margin: 0; }
+.result-qr-panel { flex: 1; max-width: 360px; display: flex; flex-direction: column; gap: 16px; color: #003B71; }
+.qr-title { font-size: clamp(26px, 3.2vw, 40px); font-weight: 800; margin: 0; color: #003B71; }
+.qr-body  { font-size: 14px; color: #555; margin: 0; }
 .qr-wrapper {
   background: #fff; border-radius: 16px; padding: 16px;
   width: fit-content;
@@ -260,21 +261,21 @@ html, body {
   min-width: 332px; min-height: 332px;
 }
 .qr-loader { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.qr-count  { font-size: 12px; color: rgba(255,255,255,.6); margin: 0; }
+.qr-count  { font-size: 12px; color: #888; margin: 0; }
 
 /* Download button like fotototem-ref */
 .btn-download {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 12px 24px; border-radius: 999px;
-  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.3);
-  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  background: #F0F4F8; border: 1px solid #D1DDE8;
+  color: #003B71; font-size: 14px; font-weight: 600; cursor: pointer;
   transition: background .2s;
 }
-.btn-download:hover { background: rgba(255,255,255,.2); }
+.btn-download:hover { background: #E2E8F0; }
 
 /* Progress bar */
-.reset-bar { position: fixed; bottom: 5px; left: 0; right: 0; height: 3px; background: rgba(255,255,255,.15); z-index: 200; }
-.reset-bar-fill { height: 100%; background: rgba(255,255,255,.6); width: 100%; }
+.reset-bar { position: fixed; bottom: 12px; left: 0; right: 0; height: 3px; background: rgba(0,59,113,.1); z-index: 200; }
+.reset-bar-fill { height: 100%; background: #05A6FF; width: 100%; }
 
 .diagnostics-info {
   position: fixed;
@@ -309,6 +310,6 @@ html, body {
 
 /* ════════════════ ERROR ════════════════ */
 .state-error { flex-direction: column; gap: 16px; z-index: 10; }
-.error-content { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; color: #fff; max-width: 360px; }
+.error-content { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; color: #003B71; max-width: 360px; }
 .error-content h2 { font-size: 22px; font-weight: 700; margin: 0; }
-.error-content p  { font-size: 14px; color: rgba(255,255,255,.7); margin: 0; }
+.error-content p  { font-size: 14px; color: #555; margin: 0; }

@@ -51,13 +51,13 @@
   let sessionCode   = null;
   let stream        = null;
   let useGphoto     = false;
-  let aspectRatio   = '4:5';
+  let aspectRatio   = '3:4';
   let capturing     = false;
   let resultTimeout = null;
   let lastDataUrl   = null;
   let photoTotal    = 0;
   let currentTimer  = 3;
-  const savedWidths = { '4:5': '', '16:9': '' };
+  const savedWidths = { '3:4': '', '4:3': '' };
   const diagnostics = {
     mode: 'Inicializando',
     preview: '--',

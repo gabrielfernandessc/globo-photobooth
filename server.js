@@ -16,10 +16,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 const sessions = new Map();
 const APP_UPDATED_AT = '2026-05-13T23:03:56-03:00';
 const FINAL_JPEG_QUALITY = 100;
-const MIN_FINAL_SIZE = {
-  '4:5': { width: 1440, height: 1800 },
-  '16:9': { width: 1920, height: 1080 },
-};
+
 const PHOTO_DIRS = {
   uploads: path.join(__dirname, 'public', 'uploads'),
   original: path.join(__dirname, 'public', 'uploads', 'original'),
@@ -67,7 +64,7 @@ function buildPhotoUrls(req, finalFilename, originalFilename = null) {
 function getSessionFrame(code, aspectRatio) {
   const session = sessions.get(code);
   if (!session) return null;
-  const key = aspectRatio === '16:9' ? 'frame16x9' : 'frame4x5';
+  const key = aspectRatio === '4:3' ? 'frame4x3' : 'frame3x4';
   const frame = session[key];
   if (!frame?.data) return null;
   return Buffer.from(frame.data, 'base64');
@@ -168,10 +165,10 @@ async function waitForStableFile(candidates, sinceMs, timeoutMs = 30000) {
   throw new Error('Sony download did not finish in time');
 }
 
-async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
+async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
   ensurePhotoDirs();
 
-  const targetRatio = aspectRatio === '16:9' ? 16 / 9 : 4 / 5;
+  const targetRatio = aspectRatio === '4:3' ? 4 / 3 : 3 / 4;
   const metadata = await sharp(input).metadata();
   if (!metadata.width || !metadata.height) throw new Error('Invalid image metadata');
 
@@ -195,8 +192,7 @@ async function composeFinalPhoto(input, { code, aspectRatio = '4:5' }) {
     cropHeight = Math.round(cropWidth / targetRatio);
   }
 
-  const minimum = MIN_FINAL_SIZE[aspectRatio] || MIN_FINAL_SIZE['4:5'];
-  const scale = Math.max(1, minimum.width / cropWidth, minimum.height / cropHeight);
+  const scale = 1; // Prevent upscaling to maintain quality
   const width = Math.round(cropWidth * scale);
   const height = Math.round(cropHeight * scale);
 
@@ -276,7 +272,7 @@ function renderDownloadPage(filename) {
 // Upload photo locally to avoid ImgBB compression
 app.post('/api/upload', async (req, res) => {
   try {
-    const { image, code, aspectRatio = '4:5' } = req.body;
+    const { image, code, aspectRatio = '3:4' } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     const inputBuffer = decodeDataImage(image);
@@ -295,8 +291,8 @@ app.post('/api/frame/:code', upload.single('frame'), (req, res) => {
   const session = sessions.get(req.params.code);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  const ratio = req.body.aspectRatio || '4:5';
-  const key = ratio === '16:9' ? 'frame16x9' : 'frame4x5';
+  const ratio = req.body.aspectRatio || '3:4';
+  const key = ratio === '4:3' ? 'frame4x3' : 'frame3x4';
 
   session[key] = { data: req.file.buffer.toString('base64'), mime: req.file.mimetype };
 
@@ -311,7 +307,7 @@ app.post('/api/frame/:code', upload.single('frame'), (req, res) => {
 app.get('/api/frame/:code', (req, res) => {
   const session = sessions.get(req.params.code);
   if (!session) return res.status(404).send('Not found');
-  const key = (req.query.ratio === '16:9') ? 'frame16x9' : 'frame4x5';
+  const key = (req.query.ratio === '4:3') ? 'frame4x3' : 'frame3x4';
   const frame = session[key];
   if (!frame) return res.status(404).send('No frame');
   res.set('Content-Type', frame.mime);
@@ -336,7 +332,7 @@ app.get('/api/version', (req, res) => {
 
 app.post('/api/photo/finalize', async (req, res) => {
   try {
-    const { image, code, aspectRatio = '4:5' } = req.body;
+    const { image, code, aspectRatio = '3:4' } = req.body;
     if (!image) return res.status(400).json({ error: 'No image data' });
 
     const inputBuffer = decodeDataImage(image);
@@ -443,7 +439,7 @@ app.post('/api/sony/capture', async (req, res) => {
   sonyCapturing = true;
 
   try {
-    const { code, aspectRatio = '4:5' } = req.body || {};
+    const { code, aspectRatio = '3:4' } = req.body || {};
     ensurePhotoDirs();
 
     const beforeList = await sonyClient.sdCard.list({ cameraId: sonyCameraId, slotNumber: SONY_SLOT });
@@ -664,9 +660,9 @@ io.on('connection', (socket) => {
       displaySocket: socket.id,
       controlSocket: null,
       photos: [],
-      settings: { timer: 3, aspectRatio: '4:5' },
-      frame4x5: null,
-      frame16x9: null,
+      settings: { timer: 3, aspectRatio: '3:4' },
+      frame3x4: null,
+      frame4x3: null,
       createdAt: Date.now(),
       lastActivity: Date.now(),
     });
@@ -694,8 +690,8 @@ io.on('connection', (socket) => {
     cb({
       success: true,
       settings: s.settings,
-      hasFrame4x5: !!s.frame4x5,
-      hasFrame16x9: !!s.frame16x9,
+      hasFrame3x4: !!s.frame3x4,
+      hasFrame4x3: !!s.frame4x3,
       photoCount: (s.photos || []).length
     });
 
