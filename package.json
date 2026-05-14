@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "share": "cloudflared tunnel --url http://localhost:3000"
   },
   "dependencies": {
     "@alpha-sdk/api": "^1.0.9",
