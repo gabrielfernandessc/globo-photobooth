@@ -147,7 +147,7 @@ html, body {
   background: #000;
 }
 /* ring-shadow = borda branca (white border como fotototem-ref) */
-.stage-card[data-ratio="4:5"]  { aspect-ratio: 4/5; }
+.stage-card[data-ratio="4:5"]  { aspect-ratio: 9/16; }
 .stage-card[data-ratio="16:9"] { aspect-ratio: 16/9; }
 
 /* Câmera: position absolute, preenche tudo, sem distorcer (object-cover) */

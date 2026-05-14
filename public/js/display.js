@@ -59,8 +59,8 @@
   const RESULT_MS = 12000; // 12s — otimizado para fila
 
   const RESOLUTIONS = {
-    '4:5':  { w: 2160, h: 3840 },
-    '16:9': { w: 2560, h: 1440 },
+    '4:5':  { w: 1080, h: 1920 }, // Vertical (9:16)
+    '16:9': { w: 1920, h: 1080 }, // Horizontal (16:9)
   };
 
   const IDLE_MSGS = [
@@ -515,7 +515,7 @@
       ctx.drawImage(frameOverlay, 0, 0, res.w, res.h);
     }
 
-    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.97);
+    const dataUrl = captureCanvas.toDataURL('image/png');
     lastDataUrl = dataUrl;
 
     showResult(dataUrl, true);
