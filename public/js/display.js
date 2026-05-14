@@ -370,9 +370,12 @@
     }
   });
   socket.on('frame-updated', ({ aspectRatio: ratio, frameUrl }) => {
-    if (ratio === aspectRatio) {
+    if (ratio === aspectRatio && frameUrl) {
+      frameOverlay.onload = () => {
+        frameOverlay.classList.add('loaded');
+        $('stage-card').style.aspectRatio = `${frameOverlay.naturalWidth} / ${frameOverlay.naturalHeight}`;
+      };
       frameOverlay.src = frameUrl;
-      frameOverlay.onload = () => frameOverlay.classList.add('loaded');
     }
   });
   socket.on('start-countdown', ({ timer }) => {
@@ -604,9 +607,16 @@
   function loadFrame() {
     if (!sessionCode) return;
     const url = `/api/frame/${sessionCode}?ratio=${aspectRatio}&t=${Date.now()}`;
-    const img = new Image(); img.crossOrigin = 'anonymous';
-    img.onload  = () => { frameOverlay.src = url; frameOverlay.classList.add('loaded'); };
-    img.onerror = () => frameOverlay.classList.remove('loaded');
+    const img = new Image();
+    img.onload  = () => { 
+      frameOverlay.src = url; 
+      frameOverlay.classList.add('loaded'); 
+      $('stage-card').style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+    };
+    img.onerror = () => {
+      frameOverlay.classList.remove('loaded');
+      $('stage-card').style.aspectRatio = '';
+    };
     img.src = url;
   }
 
