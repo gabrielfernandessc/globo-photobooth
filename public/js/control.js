@@ -266,6 +266,14 @@
       ratioPills.forEach(x => x.classList.remove('active'));
       p.classList.add('active');
       socket.emit('update-settings', { code: sessionCode, settings: { aspectRatio: selectedRatio } });
+      
+      // Update sliders to reflect new ratio (totem will handle its side)
+      const ratioParts = selectedRatio.split(':').map(Number);
+      const ratio = ratioParts[0] / ratioParts[1];
+      const currentW = parseInt(ctrlPreviewW.value);
+      const newH = Math.round(currentW / ratio);
+      ctrlPreviewH.value = newH;
+      valPreviewH.textContent = newH + 'px';
     });
   });
 
@@ -531,11 +539,21 @@
   });
   ctrlPreviewW.addEventListener('input', () => {
     valPreviewW.textContent = ctrlPreviewW.value + 'px';
-    sendCamControl({ previewWidth: parseInt(ctrlPreviewW.value) });
+    const ratioParts = selectedRatio.split(':').map(Number);
+    const ratio = ratioParts[0] / ratioParts[1];
+    const newH = Math.round(parseInt(ctrlPreviewW.value) / ratio);
+    ctrlPreviewH.value = newH;
+    valPreviewH.textContent = newH + 'px';
+    sendCamControl({ previewWidth: parseInt(ctrlPreviewW.value), previewHeight: newH });
   });
   ctrlPreviewH.addEventListener('input', () => {
     valPreviewH.textContent = ctrlPreviewH.value + 'px';
-    sendCamControl({ previewHeight: parseInt(ctrlPreviewH.value) });
+    const ratioParts = selectedRatio.split(':').map(Number);
+    const ratio = ratioParts[0] / ratioParts[1];
+    const newW = Math.round(parseInt(ctrlPreviewH.value) * ratio);
+    ctrlPreviewW.value = newW;
+    valPreviewW.textContent = newW + 'px';
+    sendCamControl({ previewWidth: newW, previewHeight: parseInt(ctrlPreviewH.value) });
   });
   ctrlZoom.addEventListener('input', () => {
     valZoom.textContent = ctrlZoom.value + 'x';
@@ -545,10 +563,16 @@
     ctrlBrightness.value = 0;  valBrightness.textContent = '0';
     ctrlContrast.value = 100;  valContrast.textContent = '100%';
     ctrlSaturation.value = 100; valSaturation.textContent = '100%';
-    ctrlPreviewW.value = 600;  valPreviewW.textContent = '600px';
-    ctrlPreviewH.value = 800;  valPreviewH.textContent = '800px';
+    
+    const ratioParts = selectedRatio.split(':').map(Number);
+    const ratio = ratioParts[0] / ratioParts[1];
+    const defaultW = 600;
+    const defaultH = Math.round(defaultW / ratio);
+
+    ctrlPreviewW.value = defaultW;  valPreviewW.textContent = defaultW + 'px';
+    ctrlPreviewH.value = defaultH;  valPreviewH.textContent = defaultH + 'px';
     ctrlZoom.value = 1;        valZoom.textContent = '1x';
-    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, previewWidth: 600, previewHeight: 800, zoom: 1 });
+    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, previewWidth: defaultW, previewHeight: defaultH, zoom: 1 });
   });
 
   /* ═══ DISCONNECT ═══ */

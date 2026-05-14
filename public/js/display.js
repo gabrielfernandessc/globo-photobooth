@@ -156,17 +156,23 @@
       if (!isResizing) return;
       
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       
       const rect = stageWrap.getBoundingClientRect();
       const newW = Math.max(200, Math.min(1200, clientX - rect.left));
-      const newH = Math.max(200, Math.min(1200, clientY - rect.top));
+      
+      // Follow the frame's aspect ratio
+      const ratioParts = aspectRatio.split(':').map(Number);
+      const ratio = ratioParts[0] / ratioParts[1];
+      const newH = newW / ratio;
       
       stageWrap.style.width = `${newW}px`;
       stageWrap.style.height = `${newH}px`;
       
       // Update control panel if connected
-      socket.emit('cam-control', { previewWidth: Math.round(newW), previewHeight: Math.round(newH) });
+      socket.emit('cam-control', { 
+        previewWidth: Math.round(newW), 
+        previewHeight: Math.round(newH) 
+      });
     };
 
     const onEnd = () => {
@@ -405,17 +411,23 @@
     if (s.timer) currentTimer = s.timer;
     if (s.aspectRatio && s.aspectRatio !== aspectRatio) {
       // Save current width for the old aspect ratio
-      savedWidths[aspectRatio] = stageWrap.style.width;
+      savedWidths[aspectRatio] = stageWrap.style.width || '600px';
 
       aspectRatio = s.aspectRatio;
       stageCard.dataset.ratio = aspectRatio;
 
-      // Restore saved width for the new aspect ratio
-      if (savedWidths[aspectRatio]) {
-        stageWrap.style.width = savedWidths[aspectRatio];
-      } else {
-        stageWrap.style.width = ''; // back to CSS default
-      }
+      // Calculate new height based on ratio
+      const ratioParts = aspectRatio.split(':').map(Number);
+      const ratio = ratioParts[0] / ratioParts[1];
+
+      // Restore saved width or use default
+      const targetW = parseInt(savedWidths[aspectRatio]) || 600;
+      const targetH = Math.round(targetW / ratio);
+
+      stageWrap.style.width = `${targetW}px`;
+      stageWrap.style.height = `${targetH}px`;
+      
+      socket.emit('cam-control', { previewWidth: targetW, previewHeight: targetH });
 
       loadFrame();
     }
