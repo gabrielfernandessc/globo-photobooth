@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "share": "cloudflared tunnel --protocol http2 --url http://localhost:3000"
+    "share": "cloudflared tunnel --protocol http2 --url http://localhost:3000",
+    "cf:dev": "npx wrangler pages dev public",
+    "cf:deploy": "npx wrangler pages deploy public --project-name apoio-missao"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -95,3 +95,79 @@ Baseado no **Guia de Marca Globo 2025 v2.0**:
 - Tipografia: Inter (fallback para Globotipo)
 - Border radius: 15px
 - Espaçamento: Grid scale (4, 8, 16, 24, 32, 48, 64, 96, 128px)
+
+---
+
+## Apoio Missão (novo painel)
+
+Foi adicionada uma área separada com dashboard de candidatos:
+
+- URL: `http://localhost:3000/apoio-missao`
+- API local: `GET /api/apoio-missao/candidatos`
+- Filtros: estado (UF), cargo e busca textual
+- Exibe link de doação por candidato (quando disponível)
+- Aviso de transparência: site não oficial, feito por apoiadores
+
+### Variáveis de ambiente
+
+Defina no `.env`:
+
+```bash
+QA_API_KEY=sua_chave_da_api_queroapoiar
+QA_API_BASE=https://api.queroapoiar.com.br
+```
+
+### Deploy Cloudflare Pages (recomendado)
+
+Esse deploy fica sem o "sleep" de 15 minutos do Render Free.
+
+#### Estrutura usada no Cloudflare
+- Estático: pasta `public`
+- API serverless: `functions/api/apoio-missao/candidatos.js`
+
+#### Passo a passo no painel
+1. Suba este repositório no GitHub.
+2. Cloudflare Dashboard -> `Workers & Pages` -> `Create` -> `Pages` -> `Connect to Git`.
+3. Selecione o repositório.
+4. Build settings:
+- Framework preset: `None`
+- Build command: (deixe vazio)
+- Build output directory: `public`
+5. Deploy.
+6. No projeto criado, vá em `Settings` -> `Variables and Secrets` e adicione:
+- `QA_API_KEY` = sua chave da API do QueroApoiar
+- `QA_API_BASE` = `https://api.queroapoiar.com.br`
+7. Vá em `Deployments` e clique `Retry deployment` para aplicar variáveis.
+
+#### Aplicar domínio apoiomissao.com.br
+1. Em `Custom domains`, clique `Set up a custom domain`.
+2. Adicione:
+- `apoiomissao.com.br`
+- `www.apoiomissao.com.br`
+3. Siga os DNS records sugeridos pelo Cloudflare (tipo `CNAME`/`A` conforme instrução da tela).
+4. Após verificado, acesse:
+- `https://apoiomissao.com.br/apoio-missao`
+
+#### Teste local com runtime do Cloudflare
+```bash
+npm run cf:dev
+```
+Abra `http://localhost:8788/apoio-missao/`.
+
+### Deploy simples (Node tradicional)
+
+Para hospedar em Render/Railway/Fly com `server.js`:
+
+1. Build command: `npm install`
+2. Start command: `node server.js`
+3. Configurar `QA_API_KEY` no painel de variáveis do provedor
+
+### Deploy Oracle Always Free (sem dormir)
+
+Use o passo a passo completo em:
+
+- `DEPLOY_ORACLE_ALWAYS_FREE.md`
+
+Script automatico de bootstrap na VM:
+
+- `scripts/bootstrap-oracle.sh`

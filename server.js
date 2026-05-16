@@ -18,6 +18,9 @@ const os = require('os');
 const sessions = new Map();
 const APP_UPDATED_AT = '2026-05-13T23:03:56-03:00';
 const FINAL_JPEG_QUALITY = 100;
+const QA_API_BASE = (process.env.QA_API_BASE || 'https://api.queroapoiar.com.br').replace(/\/+$/, '');
+const APOIO_MISSAO_KEYWORDS = ['missao', 'missão'];
+const QA_PUBLIC_BASE = 'https://queroapoiar.com.br';
 
 const DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads', 'Globo-Photobooth');
 
@@ -82,6 +85,163 @@ function decodeDataImage(image) {
 
 function safeBasename(value, fallback) {
   return path.basename(value || fallback).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function pickFirst(source, keys, fallback = null) {
+  for (const key of keys) {
+    if (source?.[key] !== undefined && source?.[key] !== null && source?.[key] !== '') return source[key];
+  }
+  return fallback;
+}
+
+function toNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return 0;
+    const normalized = raw
+      .replace(/[R$\s]/gi, '')
+      .replace(/\.(?=\d{3}(\D|$))/g, '')
+      .replace(',', '.')
+      .replace(/[^\d.-]/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function ensureHttpUrl(raw) {
+  if (!raw) return null;
+  const text = String(raw).trim();
+  if (!text) return null;
+  if (/^https?:\/\//i.test(text)) return text;
+  if (text.startsWith('/')) return `${QA_PUBLIC_BASE}${text}`;
+  if (/^[a-z0-9-]+$/i.test(text)) return `${QA_PUBLIC_BASE}/${text}`;
+  return null;
+}
+
+function listFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  const candidates = [
+    payload.items,
+    payload.data,
+    payload.results,
+    payload.rows,
+    payload.candidatos,
+    payload.campaigns,
+  ];
+  for (const item of candidates) {
+    if (Array.isArray(item)) return item;
+  }
+  return [];
+}
+
+function isMissaoParty(candidate) {
+  const label = [
+    pickFirst(candidate, ['partido', 'siglaPartido', 'partidoSigla', 'party']),
+    pickFirst(candidate?.campanha || {}, ['partido', 'siglaPartido', 'partidoSigla', 'party']),
+  ].filter(Boolean).join(' ');
+  const party = normalizeText(label);
+  return APOIO_MISSAO_KEYWORDS.some(keyword => party.includes(normalizeText(keyword)));
+}
+
+function resolveDonationUrl(candidate) {
+  const campaign = candidate?.campanha || {};
+  const rawUrl = pickFirst(candidate, [
+    'linkDoacao',
+    'link_doacao',
+    'urlDoacao',
+    'url_doacao',
+    'campanhaUrl',
+    'campaignUrl',
+    'publicUrl',
+    'urlPublica',
+    'url',
+  ]) || pickFirst(campaign, ['linkDoacao', 'url', 'publicUrl']);
+  if (rawUrl) return ensureHttpUrl(rawUrl);
+  const slug = pickFirst(candidate, ['slug', 'campanhaSlug']) || pickFirst(campaign, ['slug']);
+  return slug ? `${QA_PUBLIC_BASE}/${slug}` : null;
+}
+
+function normalizeCandidate(candidate) {
+  const campaign = candidate?.campanha || {};
+  const metrics = candidate?.metricas || candidate?.metrics || candidate?.resumo || {};
+  const donation = candidate?.doacoes || candidate?.donations || {};
+
+  const nome = pickFirst(candidate, ['nomeUrna', 'nome_urna', 'nome', 'name']) || 'Sem nome';
+  const totalArrecadado = toNumber(
+    pickFirst(candidate, ['totalArrecadado', 'arrecadado', 'valorArrecadado']) ??
+    pickFirst(metrics, ['totalArrecadado', 'arrecadado', 'valorArrecadado']) ??
+    pickFirst(campaign, ['totalArrecadado', 'arrecadado'])
+  );
+  const totalDoacoes = toNumber(
+    pickFirst(candidate, ['totalDoacoes', 'quantidadeDoacoes', 'qtdDoacoes']) ??
+    pickFirst(metrics, ['totalDoacoes', 'quantidadeDoacoes']) ??
+    pickFirst(donation, ['total', 'quantidade'])
+  );
+  const metaArrecadacao = toNumber(
+    pickFirst(candidate, ['metaArrecadacao', 'meta', 'goal']) ??
+    pickFirst(metrics, ['metaArrecadacao', 'meta']) ??
+    pickFirst(campaign, ['metaArrecadacao', 'meta'])
+  );
+
+  const percentualMeta = metaArrecadacao > 0
+    ? (totalArrecadado / metaArrecadacao) * 100
+    : toNumber(pickFirst(candidate, ['percentualMeta']) ?? pickFirst(metrics, ['percentualMeta']));
+
+  return {
+    id: pickFirst(candidate, ['cpf', 'id', '_id', 'uuid']) || `cand-${Math.random().toString(36).slice(2, 10)}`,
+    cpf: pickFirst(candidate, ['cpf', 'documento', 'document']),
+    nome,
+    nomeUrna: pickFirst(candidate, ['nomeUrna', 'nome_urna']) || nome,
+    partido: pickFirst(candidate, ['partido', 'siglaPartido', 'partidoSigla', 'party']) ||
+      pickFirst(campaign, ['partido', 'siglaPartido', 'partidoSigla', 'party']) || null,
+    uf: pickFirst(candidate, ['uf', 'estado', 'state']) || pickFirst(campaign, ['uf', 'estado', 'state']) || null,
+    cargo: pickFirst(candidate, ['cargoLabel', 'cargo', 'office', 'tituloCargo']) ||
+      pickFirst(campaign, ['cargoLabel', 'cargo', 'office']) || null,
+    cidade: pickFirst(candidate, ['cidade', 'municipio', 'city']) ||
+      pickFirst(campaign, ['cidade', 'municipio', 'city']) || null,
+    fotoUrl: ensureHttpUrl(
+      pickFirst(candidate, ['fotoUrl', 'foto', 'imagemUrl', 'avatar', 'image']) ||
+      pickFirst(campaign, ['fotoUrl', 'imagemUrl', 'avatar'])
+    ),
+    slug: pickFirst(candidate, ['slug', 'campanhaSlug']) || pickFirst(campaign, ['slug']),
+    donationUrl: resolveDonationUrl(candidate),
+    totalArrecadado,
+    totalDoacoes,
+    metaArrecadacao,
+    ticketMedio: totalDoacoes > 0 ? totalArrecadado / totalDoacoes : 0,
+    percentualMeta: Number.isFinite(percentualMeta) ? percentualMeta : 0,
+    status: pickFirst(candidate, ['status', 'situacao']) || pickFirst(campaign, ['status', 'situacao']) || null,
+  };
+}
+
+async function fetchPartnerJson(url, apiKey) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'X-API-Key': apiKey, 'Accept': 'application/json' },
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`QueroApoiar ${response.status}: ${text.slice(0, 180)}`);
+    }
+    return text ? JSON.parse(text) : {};
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function fileKey(file) {
@@ -319,6 +479,91 @@ app.get('/api/version', (req, res) => {
     updatedAt: APP_UPDATED_AT,
     label: `v${pkg.version} • ${date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`,
   });
+});
+
+app.get('/api/apoio-missao/candidatos', async (req, res) => {
+  const apiKey = process.env.QA_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'QA_API_KEY não configurada no servidor',
+      hint: 'Defina QA_API_KEY no .env antes de usar o painel Apoio Missão',
+    });
+  }
+
+  try {
+    const { uf, cargo, busca, limite = '500' } = req.query;
+    const query = new URLSearchParams();
+    query.set('limite', String(limite));
+
+    const endpoint = `${QA_API_BASE}/api/parceiros/candidatos?${query.toString()}`;
+    const payload = await fetchPartnerJson(endpoint, apiKey);
+
+    const normalized = listFromPayload(payload).map(normalizeCandidate);
+    const missaoOnly = normalized.filter(isMissaoParty);
+    const hasAnyPartyInfo = normalized.some(candidate => !!candidate.partido);
+    const scopedCandidates = missaoOnly.length > 0
+      ? missaoOnly
+      : (hasAnyPartyInfo ? [] : normalized);
+
+    const ufFilter = normalizeText(uf);
+    const cargoFilter = normalizeText(cargo);
+    const searchFilter = normalizeText(busca);
+
+    const filtered = scopedCandidates.filter(candidate => {
+      if (ufFilter && normalizeText(candidate.uf) !== ufFilter) return false;
+      if (cargoFilter && normalizeText(candidate.cargo) !== cargoFilter) return false;
+      if (searchFilter) {
+        const haystack = normalizeText([
+          candidate.nome,
+          candidate.nomeUrna,
+          candidate.uf,
+          candidate.cargo,
+          candidate.cidade,
+          candidate.slug,
+        ].filter(Boolean).join(' '));
+        if (!haystack.includes(searchFilter)) return false;
+      }
+      return true;
+    });
+
+    const totals = filtered.reduce((acc, item) => {
+      acc.totalArrecadado += item.totalArrecadado;
+      acc.totalDoacoes += item.totalDoacoes;
+      acc.totalMeta += item.metaArrecadacao;
+      return acc;
+    }, { totalArrecadado: 0, totalDoacoes: 0, totalMeta: 0 });
+
+    const ufs = [...new Set(scopedCandidates.map(c => c.uf).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+    const cargos = [...new Set(scopedCandidates.map(c => c.cargo).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+
+    res.json({
+      source: endpoint,
+      total: filtered.length,
+      filters: {
+        uf: uf || null,
+        cargo: cargo || null,
+        busca: busca || null,
+      },
+      aggregate: {
+        totalArrecadado: totals.totalArrecadado,
+        totalDoacoes: totals.totalDoacoes,
+        totalMeta: totals.totalMeta,
+        percentualMeta: totals.totalMeta > 0 ? (totals.totalArrecadado / totals.totalMeta) * 100 : 0,
+      },
+      facets: { ufs, cargos },
+      items: filtered,
+    });
+  } catch (error) {
+    console.error('Apoio Missão API error:', error.message);
+    res.status(502).json({
+      error: 'Falha ao buscar dados da API do QueroApoiar',
+      detail: error.message,
+    });
+  }
+});
+
+app.get('/apoio-missao', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'apoio-missao', 'index.html'));
 });
 
 app.post('/api/photo/finalize', async (req, res) => {

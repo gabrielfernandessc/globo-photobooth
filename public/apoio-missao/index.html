@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apoio Missão</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/apoio-missao/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <div class="brand">apoio <span>missão</span></div>
+      <a class="header-cta" href="#painel">Ver painel</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow">Painel interno</p>
+          <h1>Métricas de arrecadação do <span>Partido Missão</span></h1>
+          <p class="hero-sub">
+            Acompanhe desempenho dos candidatos, filtre por estado/cargo e acesse o link de doação de cada campanha.
+          </p>
+          <p class="disclaimer">
+            Aviso: este é um site não oficial, criado de forma independente por apoiadores do Partido Missão.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="painel" class="panel container">
+      <div class="filters">
+        <label>
+          Estado
+          <select id="filter-uf">
+            <option value="">Todos</option>
+          </select>
+        </label>
+
+        <label>
+          Cargo
+          <select id="filter-cargo">
+            <option value="">Todos</option>
+          </select>
+        </label>
+
+        <label class="search-label">
+          Buscar candidato
+          <input id="filter-busca" type="text" placeholder="Nome, cidade ou slug">
+        </label>
+
+        <button id="btn-refresh" type="button">Atualizar</button>
+      </div>
+
+      <div class="metrics" id="metrics-cards">
+        <article class="metric-card">
+          <p>Candidatos</p>
+          <h3 id="metric-candidatos">-</h3>
+        </article>
+        <article class="metric-card">
+          <p>Arrecadação total</p>
+          <h3 id="metric-arrecadado">-</h3>
+        </article>
+        <article class="metric-card">
+          <p>Total de doações</p>
+          <h3 id="metric-doacoes">-</h3>
+        </article>
+        <article class="metric-card">
+          <p>Meta atingida</p>
+          <h3 id="metric-meta">-</h3>
+        </article>
+      </div>
+
+      <div class="status-line" id="status-line">Carregando dados...</div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Candidato</th>
+              <th>UF</th>
+              <th>Cargo</th>
+              <th>Arrecadado</th>
+              <th>Doações</th>
+              <th>Meta</th>
+              <th>Doar</th>
+            </tr>
+          </thead>
+          <tbody id="candidates-body">
+            <tr>
+              <td colspan="7" class="empty">Aguardando dados...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="footnote">
+        Site não oficial, feito por apoiadores do Partido Missão.
+      </p>
+    </section>
+  </main>
+
+  <script src="/apoio-missao/app.js" defer></script>
+</body>
+</html>
