@@ -1,39 +1,92 @@
 require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
-const multer = require('multer');
+const https = require('https');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const { Server } = require('socket.io');
+const multer = require('multer');
 const sharp = require('sharp');
+const QRCode = require('qrcode');
 const pkg = require('./package.json');
+
+/* ═══════════════════════════════════════════════════════════
+   CONFIG
+   ═══════════════════════════════════════════════════════════ */
+
+const PORT = int(process.env.PORT, 3000);
+const HTTPS_PORT = int(process.env.HTTPS_PORT, 3443);
+const ENABLE_HTTPS = process.env.ENABLE_HTTPS !== 'false';
+
+// Qualidade do master (a foto que sai no botão "alta qualidade").
+const FINAL_JPEG_QUALITY = clamp(int(process.env.FINAL_JPEG_QUALITY, 100), 1, 100);
+// Teto opcional do lado maior do master. 0 = sem teto (resolução nativa do sensor).
+const MAX_FINAL_LONG_SIDE = int(process.env.MAX_FINAL_LONG_SIDE, 0);
+// Derivadas leves: preview da página de download e miniatura da galeria.
+const WEB_LONG_SIDE = int(process.env.WEB_LONG_SIDE, 2048);
+const WEB_JPEG_QUALITY = clamp(int(process.env.WEB_JPEG_QUALITY, 88), 1, 100);
+const THUMB_LONG_SIDE = 480;
+
+const SAVE_ORIGINAL = process.env.SAVE_ORIGINAL !== 'false';
+const SAVE_TO_DOWNLOADS = process.env.SAVE_TO_DOWNLOADS !== 'false';
+
+const MAX_UPLOAD_BYTES = int(process.env.MAX_UPLOAD_MB, 60) * 1024 * 1024;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const CODE_RE = /^[A-Z0-9]{4}$/;
+
+const APP_UPDATED_AT = new Date().toISOString();
+
+const DOWNLOADS_DIR = process.env.DOWNLOADS_DIR || path.join(os.homedir(), 'Downloads', 'Globo-Photobooth');
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const PHOTO_DIRS = {
+  uploads: path.join(PUBLIC_DIR, 'uploads'),
+  original: path.join(PUBLIC_DIR, 'uploads', 'original'),
+  final: path.join(PUBLIC_DIR, 'uploads', 'final'),
+  web: path.join(PUBLIC_DIR, 'uploads', 'web'),
+  thumb: path.join(PUBLIC_DIR, 'uploads', 'thumb'),
+};
+
+function int(value, fallback = 0) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+function clamp(n, min, max) {
+  return Math.min(max, Math.max(min, n));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   APP
+   ═══════════════════════════════════════════════════════════ */
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 20e6 });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
-const os = require('os');
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+});
 
 const sessions = new Map();
-const APP_UPDATED_AT = '2026-05-13T23:03:56-03:00';
-const FINAL_JPEG_QUALITY = 100;
 
-const DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads', 'Globo-Photobooth');
+// Sharp: fotos de 12–50 MP entram aqui. Sem cache de arquivo, com paralelismo
+// limitado para não estourar a RAM da máquina do totem.
+sharp.cache(false);
+sharp.concurrency(clamp(int(process.env.SHARP_CONCURRENCY, 2), 1, 8));
 
-const PHOTO_DIRS = {
-  uploads: path.join(__dirname, 'public', 'uploads'),
-  original: path.join(__dirname, 'public', 'uploads', 'original'),
-  final: path.join(__dirname, 'public', 'uploads', 'final'),
-  downloads: DOWNLOADS_DIR,
-};
-const SONY_SLOT = 1;
-const ENABLE_SONY_SDK = process.env.ENABLE_SONY_SDK === 'true';
+app.use(express.static(PUBLIC_DIR));
+app.use(express.json({ limit: '80mb' }));
+app.use(express.urlencoded({ extended: true, limit: '80mb' }));
+app.use('/uploads', express.static(PHOTO_DIRS.uploads, { maxAge: '1h', immutable: true }));
 
-app.use(express.static('public'));
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-app.use('/uploads', express.static(PHOTO_DIRS.uploads));
+/* ═══════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════ */
+
+function ensurePhotoDirs() {
+  Object.values(PHOTO_DIRS).forEach(dir => fs.mkdirSync(dir, { recursive: true }));
+  if (SAVE_TO_DOWNLOADS) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+}
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -44,8 +97,17 @@ function generateCode() {
   return code;
 }
 
-function ensurePhotoDirs() {
-  Object.values(PHOTO_DIRS).forEach(dir => fs.mkdirSync(dir, { recursive: true }));
+function normalizeCode(value) {
+  const code = String(value || '').trim().toUpperCase();
+  return CODE_RE.test(code) ? code : null;
+}
+
+function getSession(value) {
+  const code = normalizeCode(value);
+  if (!code) return null;
+  const session = sessions.get(code);
+  if (session) session.lastActivity = Date.now();
+  return session || null;
 }
 
 function getBaseUrl(req) {
@@ -53,264 +115,222 @@ function getBaseUrl(req) {
   return `${protocol}://${req.get('host')}`;
 }
 
+function safeBasename(value, fallback) {
+  return path.basename(String(value || fallback)).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 function publicUploadUrl(req, folder, filename) {
   return `${getBaseUrl(req)}/uploads/${folder}/${encodeURIComponent(filename)}`;
 }
 
-function buildPhotoUrls(req, finalFilename, originalFilename = null) {
+function buildPhotoUrls(req, names) {
+  const base = getBaseUrl(req);
   return {
-    imageUrl: publicUploadUrl(req, 'final', finalFilename),
-    pageUrl: `${getBaseUrl(req)}/photo/${encodeURIComponent(finalFilename)}`,
-    downloadUrl: `${getBaseUrl(req)}/download/${encodeURIComponent(finalFilename)}`,
-    originalUrl: originalFilename ? publicUploadUrl(req, 'original', originalFilename) : null,
+    imageUrl: publicUploadUrl(req, 'web', names.web),
+    fullUrl: publicUploadUrl(req, 'final', names.final),
+    thumbUrl: publicUploadUrl(req, 'thumb', names.thumb),
+    originalUrl: names.original ? publicUploadUrl(req, 'original', names.original) : null,
+    pageUrl: `${base}/photo/${encodeURIComponent(names.final)}`,
+    downloadUrl: `${base}/download/${encodeURIComponent(names.final)}`,
   };
 }
 
 function getSessionFrame(code, aspectRatio) {
-  const session = sessions.get(code);
+  const session = sessions.get(normalizeCode(code) || '');
   if (!session) return null;
-  const key = aspectRatio === '4:3' ? 'frame4x3' : 'frame3x4';
-  const frame = session[key];
-  if (!frame?.data) return null;
-  return Buffer.from(frame.data, 'base64');
+  const frame = session.frames[aspectRatio === '4:3' ? '4:3' : '3:4'];
+  return frame?.data ? Buffer.from(frame.data, 'base64') : null;
 }
 
 function decodeDataImage(image) {
-  const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
-  return Buffer.from(base64Data, 'base64');
+  return Buffer.from(String(image).replace(/^data:image\/\w+;base64,/, ''), 'base64');
 }
 
-function safeBasename(value, fallback) {
-  return path.basename(value || fallback).replace(/[^a-zA-Z0-9._-]/g, '_');
+function ratioValue(aspectRatio) {
+  const [a, b] = String(aspectRatio || '3:4').split(':').map(Number);
+  return a > 0 && b > 0 ? a / b : 3 / 4;
 }
 
-function fileKey(file) {
-  const contentId = file.content_id ?? file.contentId;
-  const fileId = file.file_id ?? file.fileId;
-  return `${contentId}:${fileId}`;
-}
-
-function getFileIds(file) {
+/**
+ * Maior retângulo centralizado com a proporção alvo que cabe na imagem —
+ * um crop "cover" sem reamostrar nada, então nenhum pixel do sensor é perdido
+ * fora da área cortada.
+ */
+function centerCrop(width, height, ratio) {
+  let w = width;
+  let h = Math.round(width / ratio);
+  if (h > height) {
+    h = height;
+    w = Math.round(height * ratio);
+  }
   return {
-    contentId: file.content_id ?? file.contentId,
-    fileId: file.file_id ?? file.fileId ?? 0,
+    left: Math.max(0, Math.floor((width - w) / 2)),
+    top: Math.max(0, Math.floor((height - h) / 2)),
+    width: Math.min(w, width),
+    height: Math.min(h, height),
   };
 }
 
-function isLikelyJpeg(file) {
-  return /\.(jpe?g)$/i.test(file.file_path || file.name || '');
-}
+/* ═══════════════════════════════════════════════════════════
+   COMPOSIÇÃO DA FOTO FINAL
 
-function fileTimestamp(file) {
-  const parts = [
-    file.creation_year,
-    file.creation_month,
-    file.creation_day,
-    file.creation_hour,
-    file.creation_minute,
-    file.creation_second,
-  ];
-  if (parts.some(v => v === undefined || v === null)) return 0;
-  return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]).getTime();
-}
+   Pipeline (uma única reamostragem, uma única codificação JPEG):
+     auto-rotate por EXIF → crop central na proporção → espelho opcional
+     → teto opcional de resolução → moldura por cima → JPEG.
 
-function chooseBestPhoto(files, previousKeys = new Set()) {
-  const candidates = (files || [])
-    .filter(file => getFileIds(file).contentId !== undefined)
-    .filter(file => !/\.(arw|mp4|mov)$/i.test(file.file_path || ''));
+   Metadados (incluindo GPS do celular) são removidos das versões públicas.
+   O arquivo original, com EXIF intacto, fica em uploads/original.
+   ═══════════════════════════════════════════════════════════ */
 
-  const newFiles = candidates.filter(file => !previousKeys.has(fileKey(file)));
-  const pool = newFiles.length ? newFiles : candidates;
-
-  return pool
-    .slice()
-    .sort((a, b) => {
-      const jpegScore = Number(isLikelyJpeg(b)) - Number(isLikelyJpeg(a));
-      if (jpegScore) return jpegScore;
-      const timeScore = fileTimestamp(b) - fileTimestamp(a);
-      if (timeScore) return timeScore;
-      return (b.file_size || 0) - (a.file_size || 0);
-    })[0];
-}
-
-async function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function waitForStableFile(candidates, sinceMs, timeoutMs = 30000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastPath = null;
-  let lastSize = -1;
-  let stableSince = 0;
-
-  while (Date.now() < deadline) {
-    const currentCandidates = typeof candidates === 'function' ? candidates() : candidates;
-    const existing = currentCandidates
-      .filter(Boolean)
-      .filter(filePath => fs.existsSync(filePath))
-      .map(filePath => ({ filePath, stat: fs.statSync(filePath) }))
-      .filter(({ stat }) => stat.size > 0 && stat.mtimeMs >= sinceMs - 1000)
-      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-
-    if (existing.length) {
-      const current = existing[0];
-      if (current.filePath === lastPath && current.stat.size === lastSize) {
-        if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince >= 700) return current.filePath;
-      } else {
-        lastPath = current.filePath;
-        lastSize = current.stat.size;
-        stableSince = 0;
-      }
-    }
-
-    await wait(300);
-  }
-
-  throw new Error('Sony download did not finish in time');
-}
-
-async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
+async function composeFinalPhoto(input, options = {}) {
+  const { code, aspectRatio = '3:4', mirror = false, source = 'web' } = options;
   ensurePhotoDirs();
 
-  const metadata = await sharp(input).metadata();
-  if (!metadata.width || !metadata.height) throw new Error('Invalid image metadata');
+  const meta = await sharp(input, { limitInputPixels: false }).metadata();
+  if (!meta.width || !meta.height) throw new Error('Imagem inválida (sem dimensões)');
 
-  const width = metadata.width;
-  const height = metadata.height;
+  // Após o auto-rotate, largura e altura trocam nas orientações 5–8.
+  const rotates = (meta.orientation || 1) >= 5;
+  const srcWidth = rotates ? meta.height : meta.width;
+  const srcHeight = rotates ? meta.width : meta.height;
 
-  const source = sharp(input).rotate().flop();
+  const crop = centerCrop(srcWidth, srcHeight, ratioValue(aspectRatio));
+
+  let finalWidth = crop.width;
+  let finalHeight = crop.height;
+  const longSide = Math.max(finalWidth, finalHeight);
+  const capped = MAX_FINAL_LONG_SIDE > 0 && longSide > MAX_FINAL_LONG_SIDE;
+  if (capped) {
+    const scale = MAX_FINAL_LONG_SIDE / longSide;
+    finalWidth = Math.round(finalWidth * scale);
+    finalHeight = Math.round(finalHeight * scale);
+  }
+
+  let pipeline = sharp(input, { limitInputPixels: false }).rotate().extract(crop);
+  if (mirror) pipeline = pipeline.flop();
+  if (capped) {
+    pipeline = pipeline.resize(finalWidth, finalHeight, { fit: 'fill', kernel: 'lanczos3' });
+  }
+
   const frameBuffer = getSessionFrame(code, aspectRatio);
-
-  let pipeline = source;
-
   if (frameBuffer) {
     const frame = await sharp(frameBuffer)
-      .resize(width, height, { fit: 'fill' })
+      .resize(finalWidth, finalHeight, { fit: 'fill' })
       .png()
       .toBuffer();
     pipeline = pipeline.composite([{ input: frame, left: 0, top: 0 }]);
   }
 
-  const finalFilename = `globo_final_${Date.now()}_${aspectRatio.replace(':', 'x')}.jpg`;
-  const finalPath = path.join(PHOTO_DIRS.final, finalFilename);
-  const downloadPath = path.join(PHOTO_DIRS.downloads, finalFilename);
+  const finalBuffer = await pipeline
+    .jpeg({ quality: FINAL_JPEG_QUALITY, chromaSubsampling: '4:4:4', mozjpeg: false })
+    .toBuffer();
 
-  // Salva no servidor (para o QR Code) de forma assíncrona para não travar
-  await pipeline
-    .jpeg({ quality: FINAL_JPEG_QUALITY, chromaSubsampling: '4:4:4' })
-    .withMetadata()
-    .toFile(finalPath);
+  const stamp = `${Date.now()}_${aspectRatio.replace(':', 'x')}`;
+  const names = {
+    final: `globo_${stamp}.jpg`,
+    web: `globo_${stamp}_web.jpg`,
+    thumb: `globo_${stamp}_thumb.jpg`,
+    original: null,
+  };
 
-  // Salva na pasta Downloads em background (sem dar await para não atrasar a resposta da API)
-  fs.mkdir(PHOTO_DIRS.downloads, { recursive: true }, () => {
-    fs.copyFile(finalPath, downloadPath, (err) => {
-      if (err) console.error('Erro ao copiar para Downloads:', err);
-    });
-  });
+  await fs.promises.writeFile(path.join(PHOTO_DIRS.final, names.final), finalBuffer);
 
-  const stat = fs.statSync(finalPath);
+  // Derivadas para rede: a página do QR carrega a versão web (rápida no 4G do
+  // convidado); o master fica atrás do botão de download.
+  const [webBuffer, thumbBuffer] = await Promise.all([
+    sharp(finalBuffer)
+      .resize(WEB_LONG_SIDE, WEB_LONG_SIDE, { fit: 'inside', withoutEnlargement: true, kernel: 'lanczos3' })
+      .jpeg({ quality: WEB_JPEG_QUALITY, mozjpeg: true })
+      .toBuffer(),
+    sharp(finalBuffer)
+      .resize(THUMB_LONG_SIDE, THUMB_LONG_SIDE, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 78, mozjpeg: true })
+      .toBuffer(),
+  ]);
+
+  await Promise.all([
+    fs.promises.writeFile(path.join(PHOTO_DIRS.web, names.web), webBuffer),
+    fs.promises.writeFile(path.join(PHOTO_DIRS.thumb, names.thumb), thumbBuffer),
+  ]);
+
+  if (SAVE_ORIGINAL) {
+    names.original = `globo_${stamp}_original.jpg`;
+    fs.promises
+      .writeFile(path.join(PHOTO_DIRS.original, names.original), input)
+      .catch(err => console.error('Falha ao salvar original:', err.message));
+  }
+
+  if (SAVE_TO_DOWNLOADS) {
+    fs.promises
+      .writeFile(path.join(DOWNLOADS_DIR, names.final), finalBuffer)
+      .catch(err => console.error('Falha ao copiar para Downloads:', err.message));
+  }
+
   return {
-    finalFilename,
-    finalPath,
+    names,
     meta: {
-      sourceWidth: width,
-      sourceHeight: height,
-      finalWidth: width,
-      finalHeight: height,
-      finalBytes: stat.size,
+      source,
+      sourceWidth: srcWidth,
+      sourceHeight: srcHeight,
+      sourceMegapixels: +((srcWidth * srcHeight) / 1e6).toFixed(1),
+      cropWidth: crop.width,
+      cropHeight: crop.height,
+      finalWidth,
+      finalHeight,
+      finalBytes: finalBuffer.length,
+      webBytes: webBuffer.length,
+      inputBytes: input.length,
       format: 'jpeg',
       quality: FINAL_JPEG_QUALITY,
       aspectRatio,
+      mirror,
       frameApplied: !!frameBuffer,
+      resampled: capped,
     },
   };
 }
 
-function renderDownloadPage(filename) {
-  const safeName = safeBasename(filename, 'foto.jpg');
-  const imagePath = `/uploads/final/${encodeURIComponent(safeName)}`;
-  const downloadPath = `/download/${encodeURIComponent(safeName)}`;
+/* ═══════════════════════════════════════════════════════════
+   PÁGINA DE DOWNLOAD (aberta pelo QR Code)
+   ═══════════════════════════════════════════════════════════ */
+
+function renderDownloadPage(finalName) {
+  const safeName = safeBasename(finalName, 'foto.jpg');
+  const webName = safeName.replace(/\.jpg$/i, '_web.jpg');
+  const webPath = fs.existsSync(path.join(PHOTO_DIRS.web, webName))
+    ? `/uploads/web/${encodeURIComponent(webName)}`
+    : `/uploads/final/${encodeURIComponent(safeName)}`;
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Baixar foto Globo</title>
+  <title>Sua foto — Globo</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #06121f; color: #fff; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    body { margin: 0; min-height: 100vh; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; background: #06121f; color: #fff; display: flex; align-items: center; justify-content: center; padding: 20px; }
     main { width: min(100%, 520px); display: flex; flex-direction: column; gap: 18px; align-items: center; }
     img { width: 100%; height: auto; border: 10px solid #fff; border-radius: 8px; box-shadow: 0 24px 80px rgba(0,0,0,.45); background: #fff; }
     h1 { font-size: 24px; line-height: 1.15; margin: 4px 0 0; text-align: center; }
     p { color: rgba(255,255,255,.72); font-size: 14px; line-height: 1.5; margin: 0; text-align: center; }
-    a { width: 100%; display: inline-flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; background: #fff; color: #003B71; text-decoration: none; font-weight: 800; font-size: 16px; }
+    a.dl { width: 100%; display: inline-flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; background: #fff; color: #003B71; text-decoration: none; font-weight: 800; font-size: 16px; }
   </style>
 </head>
 <body>
   <main>
-    <img src="${imagePath}" alt="Sua foto">
+    <img src="${webPath}" alt="Sua foto">
     <h1>Sua foto está pronta</h1>
-    <p>Toque no botão para baixar a versão em alta qualidade com a moldura.</p>
-    <a href="${downloadPath}">Baixar em alta qualidade</a>
+    <p>Toque no botão para baixar o arquivo em resolução máxima, com a moldura.</p>
+    <a class="dl" href="/download/${encodeURIComponent(safeName)}">Baixar em alta qualidade</a>
   </main>
 </body>
 </html>`;
 }
 
-/* ── REST API ─────────────────────────────────────────── */
-
-// Upload photo locally to avoid ImgBB compression
-app.post('/api/upload', async (req, res) => {
-  try {
-    const { image, code, aspectRatio = '3:4' } = req.body;
-    if (!image) return res.status(400).json({ error: 'No image data' });
-
-    const inputBuffer = decodeDataImage(image);
-    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
-    const urls = buildPhotoUrls(req, finalFilename);
-    
-    res.json({ success: true, data: { ...urls, url: urls.imageUrl, image: { url: urls.imageUrl }, meta: { ...meta, inputBytes: inputBuffer.length } } });
-  } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: 'Upload failed' });
-  }
-});
-
-// Upload frame PNG
-app.post('/api/frame/:code', upload.single('frame'), (req, res) => {
-  const session = sessions.get(req.params.code);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-
-  const ratio = req.body.aspectRatio || '3:4';
-  const key = ratio === '4:3' ? 'frame4x3' : 'frame3x4';
-
-  session[key] = { data: req.file.buffer.toString('base64'), mime: req.file.mimetype };
-
-  io.to(req.params.code).emit('frame-updated', {
-    aspectRatio: ratio,
-    frameUrl: `/api/frame/${req.params.code}?ratio=${ratio}&t=${Date.now()}`
-  });
-  res.json({ success: true });
-});
-
-// Get frame
-app.get('/api/frame/:code', (req, res) => {
-  const session = sessions.get(req.params.code);
-  if (!session) return res.status(404).send('Not found');
-  const key = (req.query.ratio === '4:3') ? 'frame4x3' : 'frame3x4';
-  const frame = session[key];
-  if (!frame) return res.status(404).send('No frame');
-  res.set('Content-Type', frame.mime);
-  res.send(Buffer.from(frame.data, 'base64'));
-});
-
-// Get photos list
-app.get('/api/photos/:code', (req, res) => {
-  const session = sessions.get(req.params.code);
-  if (!session) return res.json({ photos: [] });
-  res.json({ photos: session.photos || [] });
-});
+/* ═══════════════════════════════════════════════════════════
+   REST API
+   ═══════════════════════════════════════════════════════════ */
 
 app.get('/api/version', (req, res) => {
   const date = new Date(APP_UPDATED_AT);
@@ -321,26 +341,144 @@ app.get('/api/version', (req, res) => {
   });
 });
 
+// QR Code gerado localmente — o evento não depende de internet.
+app.get('/api/qr', async (req, res) => {
+  const data = String(req.query.data || '');
+  if (!data) return res.status(400).send('missing data');
+  try {
+    const png = await QRCode.toBuffer(data, {
+      type: 'png',
+      width: clamp(int(req.query.size, 420), 120, 1200),
+      margin: 2,
+      errorCorrectionLevel: req.query.ecc || 'M',
+      color: { dark: `#${(req.query.color || '003B71').replace('#', '')}`, light: '#FFFFFFFF' },
+    });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(png);
+  } catch (err) {
+    console.error('QR error:', err.message);
+    res.status(500).send('qr failed');
+  }
+});
+
+/**
+ * Captura vinda do celular: JPEG binário direto do sensor (multipart).
+ * Sem base64 — 12 MP viram ~5 MB em vez de ~7 MB, e sem custo de encode.
+ */
+app.post('/api/photo/capture', upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file?.buffer?.length) return res.status(400).json({ error: 'Arquivo ausente' });
+
+    const { finalName, meta, urls } = await processCapture(req, req.file.buffer, {
+      code: req.body.code,
+      aspectRatio: req.body.aspectRatio || '3:4',
+      mirror: String(req.body.mirror) === 'true',
+      source: req.body.source || 'phone',
+    });
+
+    res.json({ success: true, data: { ...urls, finalName, meta } });
+  } catch (err) {
+    console.error('Capture error:', err);
+    res.status(500).json({ error: err.message || 'Falha ao processar a foto' });
+  }
+});
+
+/** Captura vinda da webcam do próprio totem (data URL) — caminho legado. */
 app.post('/api/photo/finalize', async (req, res) => {
   try {
-    const { image, code, aspectRatio = '3:4' } = req.body;
-    if (!image) return res.status(400).json({ error: 'No image data' });
+    const { image, code, aspectRatio = '3:4', mirror = true } = req.body;
+    if (!image) return res.status(400).json({ error: 'Sem imagem' });
 
-    const inputBuffer = decodeDataImage(image);
-    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
-    const urls = buildPhotoUrls(req, finalFilename);
+    const buffer = decodeDataImage(image);
+    const { finalName, meta, urls } = await processCapture(req, buffer, {
+      code,
+      aspectRatio,
+      mirror: !!mirror,
+      source: 'webcam',
+    });
 
-    res.json({ success: true, data: { ...urls, meta: { ...meta, inputBytes: inputBuffer.length } } });
+    res.json({ success: true, data: { ...urls, finalName, meta } });
   } catch (err) {
-    console.error('Finalize photo error:', err);
-    res.status(500).json({ error: err.message || 'Finalize failed' });
+    console.error('Finalize error:', err);
+    res.status(500).json({ error: err.message || 'Falha ao finalizar' });
   }
+});
+
+async function processCapture(req, buffer, options) {
+  const { names, meta } = await composeFinalPhoto(buffer, options);
+  const urls = buildPhotoUrls(req, names);
+
+  const session = getSession(options.code);
+  if (session) {
+    const entry = { url: urls.imageUrl, full: urls.fullUrl, thumbnail: urls.thumbUrl, page: urls.pageUrl, ts: Date.now() };
+    session.photos.push(entry);
+    io.to(session.code).emit('photo-ready', { ...entry, total: session.photos.length });
+    if (session.displaySocket) {
+      io.to(session.displaySocket).emit('capture-result', { ...urls, meta });
+    }
+  }
+
+  return { finalName: names.final, meta, urls };
+}
+
+// Upload da moldura PNG
+app.post('/api/frame/:code', upload.single('frame'), (req, res) => {
+  const session = getSession(req.params.code);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  if (!req.file?.buffer?.length) return res.status(400).json({ error: 'Arquivo ausente' });
+
+  const ratio = req.body.aspectRatio === '4:3' ? '4:3' : '3:4';
+  session.frames[ratio] = { data: req.file.buffer.toString('base64'), mime: req.file.mimetype };
+
+  io.to(session.code).emit('frame-updated', {
+    aspectRatio: ratio,
+    frameUrl: `/api/frame/${session.code}?ratio=${encodeURIComponent(ratio)}&t=${Date.now()}`,
+  });
+  res.json({ success: true });
+});
+
+app.delete('/api/frame/:code', (req, res) => {
+  const session = getSession(req.params.code);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  const ratio = req.query.ratio === '4:3' ? '4:3' : '3:4';
+  session.frames[ratio] = null;
+  io.to(session.code).emit('frame-updated', { aspectRatio: ratio, frameUrl: null });
+  res.json({ success: true });
+});
+
+app.get('/api/frame/:code', (req, res) => {
+  const session = sessions.get(normalizeCode(req.params.code) || '');
+  if (!session) return res.status(404).send('Sessão não encontrada');
+  const frame = session.frames[req.query.ratio === '4:3' ? '4:3' : '3:4'];
+  if (!frame) return res.status(404).send('Sem moldura');
+  res.set('Content-Type', frame.mime || 'image/png');
+  res.send(Buffer.from(frame.data, 'base64'));
+});
+
+app.get('/api/photos/:code', (req, res) => {
+  const session = sessions.get(normalizeCode(req.params.code) || '');
+  res.json({ photos: session?.photos || [] });
+});
+
+app.get('/api/session/:code', (req, res) => {
+  const session = sessions.get(normalizeCode(req.params.code) || '');
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  res.json({
+    code: session.code,
+    settings: session.settings,
+    hasDisplay: !!session.displaySocket,
+    hasCamera: !!session.cameraSocket,
+    hasControl: !!session.controlSocket,
+    photoCount: session.photos.length,
+  });
 });
 
 app.get('/photo/:filename', (req, res) => {
   const filename = safeBasename(req.params.filename, '');
-  const finalPath = path.join(PHOTO_DIRS.final, filename);
-  if (!filename || !fs.existsSync(finalPath)) return res.status(404).send('Foto não encontrada');
+  if (!filename || !fs.existsSync(path.join(PHOTO_DIRS.final, filename))) {
+    return res.status(404).send('Foto não encontrada');
+  }
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(renderDownloadPage(filename));
 });
@@ -352,176 +490,301 @@ app.get('/download/:filename', (req, res) => {
   res.download(finalPath, `globo_foto_${Date.now()}.jpg`);
 });
 
-/* ═══════════════════════════════════════════════════════
-   SOCKET.IO — Sessão Persistente
-   
-   Regras:
-   1. create-session aceita code opcional → reutiliza sessão existente
-   2. Disconnect do display NÃO deleta a sessão (só nullifica displaySocket)
-   3. Disconnect do controle NÃO deleta a sessão (só nullifica controlSocket)
-   4. Sessão só é deletada após 24h de inatividade
-   5. Reconexão: display e controle podem re-join ao mesmo código
-   ═══════════════════════════════════════════════════════ */
+// Erros do multer (arquivo grande demais, campo errado) viram JSON legível
+// em vez de um stack de 500 na cara do operador.
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: `Arquivo maior que ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB` });
+  }
+  console.error('Erro na requisição:', err.message);
+  res.status(500).json({ error: err.message || 'Erro interno' });
+});
 
-io.on('connection', (socket) => {
-  console.log('+ connected', socket.id);
+/* ═══════════════════════════════════════════════════════════
+   SOCKET.IO
 
-  /* ── Create or rejoin session (display side) ── */
-  socket.on('create-session', ({ requestedCode } = {}, cb) => {
-    // If a code was requested and the session exists, rejoin it
-    if (requestedCode && sessions.has(requestedCode)) {
-      const s = sessions.get(requestedCode);
-      // Update display socket to new connection
-      s.displaySocket = socket.id;
-      s.lastActivity = Date.now();
-      socket.join(requestedCode);
-      socket.sessionCode = requestedCode;
+   Três papéis por sessão:
+     display — a tela grande (preview + contagem + QR)
+     camera  — o celular que captura e transmite o preview via WebRTC
+     control — o disparo remoto (pode ser um segundo aparelho)
 
-      // Notify connected controller that display is back
-      if (s.controlSocket) {
-        io.to(s.controlSocket).emit('display-reconnected');
-      }
+   A sessão sobrevive a qualquer desconexão; só morre após 24h parada.
+   ═══════════════════════════════════════════════════════════ */
 
-      console.log('Display rejoined session:', requestedCode);
-      cb({ code: requestedCode, rejoined: true, photoCount: (s.photos || []).length });
-      return;
+const io = new Server(server, {
+  maxHttpBufferSize: 12e6,
+  pingTimeout: 25000,
+});
+
+function sessionSnapshot(session) {
+  return {
+    code: session.code,
+    settings: session.settings,
+    hasDisplay: !!session.displaySocket,
+    hasCamera: !!session.cameraSocket,
+    hasControl: !!session.controlSocket,
+    cameraInfo: session.cameraInfo,
+    hasFrame3x4: !!session.frames['3:4'],
+    hasFrame4x3: !!session.frames['4:3'],
+    photoCount: session.photos.length,
+  };
+}
+
+function broadcastPresence(session) {
+  io.to(session.code).emit('presence', sessionSnapshot(session));
+}
+
+io.on('connection', socket => {
+  /* ── Display: cria ou reassume a sessão ── */
+  socket.on('create-session', ({ requestedCode } = {}, cb = () => {}) => {
+    const requested = normalizeCode(requestedCode);
+    let session = requested ? sessions.get(requested) : null;
+
+    if (!session) {
+      const code = requested && !sessions.has(requested) ? requested : generateCode();
+      session = {
+        code,
+        displaySocket: null,
+        controlSocket: null,
+        cameraSocket: null,
+        cameraInfo: null,
+        photos: [],
+        settings: { timer: 3, aspectRatio: '3:4', shutterLeadMs: 250, flashMode: 'off' },
+        frames: { '3:4': null, '4:3': null },
+        createdAt: Date.now(),
+        lastActivity: Date.now(),
+      };
+      sessions.set(code, session);
+      console.log('Sessão criada:', code);
+    } else {
+      console.log('Display reassumiu a sessão:', session.code);
     }
 
-    // Create new session (use requested code if unique, otherwise generate)
-    const code = (requestedCode && !sessions.has(requestedCode)) ? requestedCode : generateCode();
-    sessions.set(code, {
-      displaySocket: socket.id,
-      controlSocket: null,
-      photos: [],
-      settings: { timer: 3, aspectRatio: '3:4' },
-      frame3x4: null,
-      frame4x3: null,
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
+    session.displaySocket = socket.id;
+    session.lastActivity = Date.now();
+    socket.join(session.code);
+    socket.sessionCode = session.code;
+    socket.role = 'display';
+
+    cb({ code: session.code, rejoined: !!requested && !!sessions.get(requested), ...sessionSnapshot(session) });
+    broadcastPresence(session);
+
+    // Se o celular já estava transmitindo, refaz a negociação com o novo display.
+    if (session.cameraSocket) io.to(session.cameraSocket).emit('display-ready');
+  });
+
+  /* ── Control / Camera: entra numa sessão existente ── */
+  socket.on('join-session', (payload, cb = () => {}) => {
+    const raw = typeof payload === 'string' ? { code: payload, role: 'control' } : payload || {};
+    const session = getSession(raw.code);
+    if (!session) return cb({ error: 'Código inválido' });
+
+    const role = raw.role === 'camera' ? 'camera' : 'control';
+    socket.join(session.code);
+    socket.sessionCode = session.code;
+    socket.role = role;
+
+    if (role === 'camera') {
+      session.cameraSocket = socket.id;
+      session.cameraInfo = raw.info || null;
+      console.log('Câmera conectada:', session.code, raw.info?.label || '');
+      if (session.displaySocket) io.to(session.displaySocket).emit('camera-connected', { info: session.cameraInfo });
+    } else {
+      session.controlSocket = socket.id;
+      console.log('Controle conectado:', session.code);
+      if (session.displaySocket) io.to(session.displaySocket).emit('controller-connected');
+    }
+
+    cb({ success: true, ...sessionSnapshot(session) });
+    if (session.photos.length) socket.emit('session-photos', { photos: session.photos });
+    broadcastPresence(session);
+
+    if (role === 'camera' && session.displaySocket) socket.emit('display-ready');
+  });
+
+  /* ── Sinalização WebRTC (celular ⇄ tela do totem) ── */
+  socket.on('webrtc-signal', ({ code, to, data } = {}) => {
+    const session = getSession(code);
+    if (!session || !data) return;
+    const target = to === 'camera' ? session.cameraSocket : session.displaySocket;
+    if (!target) return;
+    io.to(target).emit('webrtc-signal', { from: socket.role || (to === 'camera' ? 'display' : 'camera'), data });
+  });
+
+  /* ── Disparo: controle/display pede, display faz a contagem ── */
+  socket.on('trigger-capture', ({ code, timer } = {}) => {
+    const session = getSession(code);
+    if (!session?.displaySocket) return;
+    // Vai para a sala inteira: o display conduz a contagem e o celular
+    // acompanha, acendendo a lanterna a tempo da exposição estabilizar.
+    io.to(session.code).emit('start-countdown', { timer: timer || session.settings.timer });
+  });
+
+  /* ── Fim da contagem: o display manda o celular bater a foto ── */
+  socket.on('camera-shoot', ({ code, aspectRatio, flashMode } = {}) => {
+    const session = getSession(code);
+    if (!session?.cameraSocket) return;
+    io.to(session.cameraSocket).emit('camera-shoot', {
+      aspectRatio: aspectRatio || session.settings.aspectRatio,
+      flashMode: flashMode || session.settings.flashMode,
     });
-    socket.join(code);
-    socket.sessionCode = code;
-    cb({ code, rejoined: false, photoCount: 0 });
-    console.log('Session created:', code);
   });
 
-  /* ── Join session (controller side) ── */
-  socket.on('join-session', (code, cb) => {
-    const s = sessions.get(code);
-    if (!s) return cb({ error: 'Código inválido' });
-
-    s.controlSocket = socket.id;
-    s.lastActivity = Date.now();
-    socket.join(code);
-    socket.sessionCode = code;
-
-    // Notify display
-    if (s.displaySocket) {
-      io.to(s.displaySocket).emit('controller-connected');
-    }
-
-    cb({
-      success: true,
-      settings: s.settings,
-      hasFrame3x4: !!s.frame3x4,
-      hasFrame4x3: !!s.frame4x3,
-      photoCount: (s.photos || []).length
-    });
-
-    // Send existing photos to the joining controller
-    if (s.photos && s.photos.length > 0) {
-      socket.emit('session-photos', { photos: s.photos });
-    }
-    console.log('Controller joined:', code);
+  /* ── Estado da captura no celular (para display e controle acompanharem) ── */
+  socket.on('camera-status', ({ code, status, detail } = {}) => {
+    const session = getSession(code);
+    if (session) io.to(session.code).emit('camera-status', { status, detail });
   });
 
-  /* ── Trigger capture ── */
-  socket.on('trigger-capture', ({ code, timer }) => {
-    const s = sessions.get(code);
-    if (s) {
-      s.lastActivity = Date.now();
-      if (s.displaySocket) io.to(s.displaySocket).emit('start-countdown', { timer });
-    }
+  /* ── Capacidades/telemetria do celular (resolução, bateria, torch…) ── */
+  socket.on('camera-state', ({ code, state } = {}) => {
+    const session = getSession(code);
+    if (!session) return;
+    session.cameraInfo = { ...(session.cameraInfo || {}), ...state };
+    io.to(session.code).emit('camera-state', { state: session.cameraInfo });
   });
 
-  /* ── Photo uploaded ── */
-  socket.on('photo-uploaded', ({ code, url, thumbnail }) => {
-    const s = sessions.get(code);
-    if (s) {
-      s.photos.push({ url, thumbnail, ts: Date.now() });
-      s.lastActivity = Date.now();
-      io.to(code).emit('photo-ready', { url, thumbnail, total: s.photos.length });
-    }
+  /* ── Controles do celular vindos do controle remoto (torch, zoom, foco…) ── */
+  socket.on('camera-control', ({ code, cmd } = {}) => {
+    const session = getSession(code);
+    if (session?.cameraSocket) io.to(session.cameraSocket).emit('camera-control', { cmd });
   });
 
-  /* ── Update settings ── */
-  socket.on('update-settings', ({ code, settings }) => {
-    const s = sessions.get(code);
-    if (s) {
-      Object.assign(s.settings, settings);
-      s.lastActivity = Date.now();
-      io.to(code).emit('settings-updated', s.settings);
-    }
+  socket.on('update-settings', ({ code, settings } = {}) => {
+    const session = getSession(code);
+    if (!session || !settings) return;
+    Object.assign(session.settings, settings);
+    io.to(session.code).emit('settings-updated', session.settings);
   });
 
-  /* ── Re-show photo on display (gallery tap) ── */
-  socket.on('show-photo', ({ code, url }) => {
-    const s = sessions.get(code);
-    if (s && s.displaySocket) io.to(s.displaySocket).emit('show-photo', { url });
+  socket.on('show-photo', ({ code, url } = {}) => {
+    const session = getSession(code);
+    if (session?.displaySocket) io.to(session.displaySocket).emit('show-photo', { url });
   });
 
-  /* ── Reset to preview (operator "Next" button) ── */
-  socket.on('reset-to-preview', ({ code }) => {
-    const s = sessions.get(code);
-    if (s && s.displaySocket) io.to(s.displaySocket).emit('reset-to-preview');
+  socket.on('reset-to-preview', ({ code } = {}) => {
+    const session = getSession(code);
+    if (session?.displaySocket) io.to(session.displaySocket).emit('reset-to-preview');
   });
 
-  /* ── Camera control relay ── */
-  socket.on('cam-control', ({ code, cmd }) => {
-    const s = sessions.get(code);
-    if (s && s.displaySocket) io.to(s.displaySocket).emit('cam-control', { cmd });
+  /* ── Filtros/ajustes visuais do preview do totem ── */
+  socket.on('cam-control', ({ code, cmd } = {}) => {
+    const session = getSession(code);
+    if (!session || !cmd) return;
+    socket.to(session.code).emit('cam-control', { cmd });
   });
 
-
-  /* ── Disconnect — DOES NOT DELETE SESSION ──
-     Session survives both display and controller disconnects.
-     Only cleaned up after 24h of inactivity. */
+  /* ── Desconexão: nunca apaga a sessão ── */
   socket.on('disconnect', () => {
-    const code = socket.sessionCode;
-    if (!code) return;
-    const s = sessions.get(code);
-    if (!s) return;
+    const session = sessions.get(socket.sessionCode || '');
+    if (!session) return;
 
-    if (s.displaySocket === socket.id) {
-      s.displaySocket = null;
-      // Notify controller that display went away (but session lives)
-      if (s.controlSocket) {
-        io.to(s.controlSocket).emit('display-disconnected');
-      }
-      console.log('Display disconnected (session preserved):', code);
-    } else if (s.controlSocket === socket.id) {
-      s.controlSocket = null;
-      // Notify display that controller went away
-      if (s.displaySocket) {
-        io.to(s.displaySocket).emit('controller-disconnected');
-      }
-      console.log('Controller disconnected (session preserved):', code);
+    if (session.displaySocket === socket.id) {
+      session.displaySocket = null;
+      if (session.controlSocket) io.to(session.controlSocket).emit('display-disconnected');
+      if (session.cameraSocket) io.to(session.cameraSocket).emit('display-disconnected');
+    } else if (session.controlSocket === socket.id) {
+      session.controlSocket = null;
+      if (session.displaySocket) io.to(session.displaySocket).emit('controller-disconnected');
+    } else if (session.cameraSocket === socket.id) {
+      session.cameraSocket = null;
+      session.cameraInfo = null;
+      if (session.displaySocket) io.to(session.displaySocket).emit('camera-disconnected');
     }
+    broadcastPresence(session);
   });
 });
 
-// Cleanup sessions older than 24h of inactivity
 setInterval(() => {
   const now = Date.now();
-  for (const [code, s] of sessions) {
-    if (now - (s.lastActivity || s.createdAt) > 86400000) {
+  for (const [code, session] of sessions) {
+    if (now - (session.lastActivity || session.createdAt) > SESSION_TTL_MS) {
       sessions.delete(code);
-      console.log('Session expired:', code);
+      console.log('Sessão expirada:', code);
     }
   }
-}, 1800000);
+}, 30 * 60 * 1000);
 
-const PORT = process.env.PORT || 3000;
+/* ═══════════════════════════════════════════════════════════
+   BOOT — HTTP + HTTPS
+
+   O celular só libera getUserMedia em contexto seguro. Em rede local
+   isso significa HTTPS, então geramos um certificado autoassinado na
+   primeira execução (o Chrome pede "Avançar" uma vez e depois trata a
+   origem como segura).
+   ═══════════════════════════════════════════════════════════ */
+
+function lanAddresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter(i => i && i.family === 'IPv4' && !i.internal)
+    .map(i => i.address);
+}
+
+function loadOrCreateCert() {
+  const dir = path.join(__dirname, 'certs');
+  const keyPath = path.join(dir, 'key.pem');
+  const certPath = path.join(dir, 'cert.pem');
+
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
+  }
+
+  let selfsigned;
+  try {
+    selfsigned = require('selfsigned');
+  } catch {
+    return null;
+  }
+
+  const hosts = ['localhost', '127.0.0.1', ...lanAddresses()];
+  const pems = selfsigned.generate([{ name: 'commonName', value: hosts[2] || 'localhost' }], {
+    days: 825,
+    keySize: 2048,
+    algorithm: 'sha256',
+    extensions: [
+      { name: 'basicConstraints', cA: false },
+      {
+        name: 'subjectAltName',
+        altNames: hosts.map(h => (/^\d+\.\d+\.\d+\.\d+$/.test(h) ? { type: 7, ip: h } : { type: 2, value: h })),
+      },
+    ],
+  });
+
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(keyPath, pems.private);
+  fs.writeFileSync(certPath, pems.cert);
+  console.log('Certificado autoassinado gerado em certs/');
+  return { key: pems.private, cert: pems.cert };
+}
+
+ensurePhotoDirs();
+
 server.listen(PORT, () => {
-  console.log(`\n🎬 Globo Photo Booth → http://localhost:${PORT}\n`);
+  const lan = lanAddresses();
+  console.log('\n🎬  Globo Photo Booth');
+  console.log(`   HTTP   http://localhost:${PORT}`);
+  lan.forEach(ip => console.log(`          http://${ip}:${PORT}`));
+
+  if (!ENABLE_HTTPS) {
+    console.log('\n   HTTPS desativado (ENABLE_HTTPS=false).\n');
+    return;
+  }
+
+  const creds = loadOrCreateCert();
+  if (!creds) {
+    console.log('\n   HTTPS indisponível: rode `npm install` para instalar "selfsigned".');
+    console.log('   Sem HTTPS o celular não libera a câmera pela rede local.\n');
+    return;
+  }
+
+  const secure = https.createServer(creds, app);
+  io.attach(secure);
+  secure.listen(HTTPS_PORT, () => {
+    console.log(`\n   HTTPS  https://localhost:${HTTPS_PORT}`);
+    lan.forEach(ip => console.log(`          https://${ip}:${HTTPS_PORT}   ← use esta no celular`));
+    console.log('\n   Totem:   /display.html      Celular-câmera: /camera.html');
+    console.log('   Controle: /control.html\n');
+  });
 });

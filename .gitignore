@@ -1,3 +1,9 @@
 node_modules/
 .env
 .DS_Store
+
+# Certificado autoassinado gerado no primeiro boot (por máquina)
+certs/
+
+# Fotos do evento
+public/uploads/
