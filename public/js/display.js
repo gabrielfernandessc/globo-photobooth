@@ -90,7 +90,17 @@
   ];
   let msgIdx = 0;
 
-  const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: Infinity });
+  /* Caminho e transporte vêm de /api/config.js: na Vercel o Socket.IO
+     roda sob /api/server e só com WebSocket. */
+  const BOOTH = window.__BOOTH__ || {};
+  const socket = io({
+    path: BOOTH.socketPath || '/socket.io',
+    transports: BOOTH.transports || ['polling', 'websocket'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+  });
 
   /* ═══════════════════════════════════════════════════════
      INIT
@@ -486,8 +496,18 @@
     qrImg.style.display = 'none';
   }
 
+  /**
+   * O servidor devolve caminhos relativos — assim o app funciona igual em
+   * http, https e atrás de túnel, sem adivinhar o host. Mas o QR é lido
+   * por OUTRO aparelho, então aqui precisa virar URL absoluta.
+   */
+  function absolute(url) {
+    try { return new URL(url, location.href).href; } catch { return url; }
+  }
+
   /** QR gerado pelo próprio servidor — o evento funciona sem internet. */
-  function generateQR(url) {
+  function generateQR(rawUrl) {
+    const url = absolute(rawUrl);
     qrLoader.style.display = 'flex';
     qrImg.style.display = 'none';
     qrImg.onload = () => {
