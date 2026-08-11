@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#06121f">
+  <title>Câmera — Fotoboarding</title>
+  <link rel="stylesheet" href="/css/camera.css">
+</head>
+<body>
+
+  <!-- ═══ PAREAMENTO ═══ -->
+  <section class="screen" id="screen-pair">
+    <div class="pair-box">
+      <svg class="pair-logo" width="44" height="44" viewBox="0 0 500 500" fill="none">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M250 500C388.071 500 500 388.071 500 250C500 111.929 388.071 0 250 0C111.929 0 0 111.929 0 250C0 388.071 111.929 500 250 500ZM250 392.857C328.898 392.857 392.857 328.898 392.857 250C392.857 171.102 328.898 107.143 250 107.143C171.102 107.143 107.143 171.102 107.143 250C107.143 328.898 171.102 392.857 250 392.857Z" fill="#05A6FF"/>
+        <circle cx="250" cy="250" r="85.714" fill="#05A6FF"/>
+      </svg>
+      <h1>Celular como câmera</h1>
+      <p class="pair-sub">Digite o código que aparece na tela do totem.</p>
+
+      <div class="code-inputs" id="code-inputs">
+        <input type="text" maxlength="1" inputmode="text" autocomplete="off" autocapitalize="characters">
+        <input type="text" maxlength="1" inputmode="text" autocomplete="off" autocapitalize="characters">
+        <input type="text" maxlength="1" inputmode="text" autocomplete="off" autocapitalize="characters">
+        <input type="text" maxlength="1" inputmode="text" autocomplete="off" autocapitalize="characters">
+      </div>
+
+      <p class="pair-error hidden" id="pair-error"></p>
+      <button class="btn-primary" id="btn-pair" disabled>Conectar como câmera</button>
+      <p class="pair-note">Este aparelho vira a câmera do totem. Deixe-o apoiado e a tela ligada.</p>
+    </div>
+  </section>
+
+  <!-- ═══ CÂMERA ═══ -->
+  <section class="screen hidden" id="screen-camera">
+
+    <div class="viewfinder" id="viewfinder">
+      <video id="preview" autoplay playsinline muted></video>
+      <div class="ratio-guide" id="ratio-guide"></div>
+
+      <div class="vf-top">
+        <span class="chip" id="chip-link"><i class="dot" id="dot-link"></i><span id="txt-link">Conectando…</span></span>
+        <span class="chip" id="chip-res">—</span>
+        <span class="chip chip-code" id="chip-code">----</span>
+      </div>
+
+      <div class="countdown hidden" id="countdown"><span id="countdown-num">3</span></div>
+      <div class="shot-flash hidden" id="shot-flash"></div>
+
+      <div class="vf-toast hidden" id="toast"></div>
+    </div>
+
+    <div class="panel">
+
+      <div class="quick-row">
+        <button class="quick" id="btn-torch" aria-pressed="false">
+          <span class="quick-ico">🔦</span><span class="quick-lbl">Luz</span>
+        </button>
+        <button class="quick" id="btn-flip">
+          <span class="quick-ico">🔄</span><span class="quick-lbl">Virar</span>
+        </button>
+        <button class="quick" id="btn-focus">
+          <span class="quick-ico">🎯</span><span class="quick-lbl">Focar</span>
+        </button>
+        <button class="quick" id="btn-more">
+          <span class="quick-ico">⚙️</span><span class="quick-lbl">Ajustes</span>
+        </button>
+      </div>
+
+      <div class="shutter-row">
+        <button class="shutter" id="btn-shutter" aria-label="Disparar foto"><span></span></button>
+      </div>
+      <p class="shutter-hint" id="shutter-hint">Toque para disparar · o totem faz a contagem</p>
+
+      <!-- ── Ajustes ── -->
+      <div class="settings hidden" id="settings">
+
+        <label class="field">
+          <span class="field-label">Câmera do aparelho</span>
+          <select id="sel-device"></select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Resolução da foto</span>
+          <select id="sel-photo-size"></select>
+          <span class="field-hint" id="hint-photo-size">Use sempre a maior — é o arquivo que vai para o convidado.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Qualidade do preview no totem</span>
+          <select id="sel-stream">
+            <option value="1080">Full HD 1080p (recomendado)</option>
+            <option value="1440">2K 1440p</option>
+            <option value="720">HD 720p (rede fraca)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Iluminação no disparo</span>
+          <select id="sel-flash">
+            <option value="off">Sem luz</option>
+            <option value="torch">Lanterna durante a contagem</option>
+            <option value="flash">Flash no disparo</option>
+          </select>
+        </label>
+
+        <div class="field" id="field-zoom">
+          <span class="field-label">Zoom óptico/digital <b id="val-zoom">1.0x</b></span>
+          <input type="range" id="ctrl-zoom" min="1" max="4" step="0.1" value="1">
+        </div>
+
+        <div class="field" id="field-ev">
+          <span class="field-label">Exposição <b id="val-ev">0</b></span>
+          <input type="range" id="ctrl-ev" min="-3" max="3" step="0.33" value="0">
+        </div>
+
+        <label class="switch">
+          <input type="checkbox" id="chk-mirror">
+          <span>Espelhar a foto final (modo selfie)</span>
+        </label>
+
+        <label class="switch">
+          <input type="checkbox" id="chk-keep-awake" checked>
+          <span>Manter a tela ligada</span>
+        </label>
+
+        <div class="caps" id="caps"></div>
+
+        <button class="btn-ghost" id="btn-unpair">Desconectar deste totem</button>
+      </div>
+    </div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/camera.js"></script>
+</body>
+</html>
