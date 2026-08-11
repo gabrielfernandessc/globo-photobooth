@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O app fala HTTP puro com o servidor do totem na rede local.
+
+  Isso apaga o maior atrito da versão web: no navegador a câmera só abre
+  em contexto seguro, o que obrigava a gerar um certificado autoassinado
+  e fazer o operador aceitar o aviso no celular. Um app nativo não tem
+  essa regra — o CameraX não depende de HTTPS.
+
+  cleartext fica liberado de forma ampla porque o IP do totem muda a cada
+  evento, e o Android casa domínio exato, não faixa de rede: não há como
+  listar "192.168.*" aqui. O tráfego em claro é a foto e o preview, na
+  LAN do evento. Apontando para a Vercel, a URL é https e a conexão
+  continua cifrada.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Permite um servidor com certificado próprio instalado no
+                 aparelho, caso o evento exija HTTPS na rede local. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

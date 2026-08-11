@@ -236,6 +236,49 @@ depende da internet.
 
 ---
 
+## App Android nativo (opcional)
+
+A página `/camera.html` funciona em qualquer celular, mas esbarra no que o
+Chrome expõe. O app em `android/` fala o **mesmo protocolo** — o servidor não
+muda nada — e tira do sensor o que o navegador não alcança:
+
+| | `/camera.html` | App nativo |
+|:--|:--|:--|
+| Resolução | ~12 MP (sensor entrega binado) | **50 MP**, resolução plena do S22 |
+| Atraso do obturador | 300–600 ms | **zero** no modo ZSL |
+| Zoom, foco, exposição | o que o navegador expõe | controle direto do CameraX |
+| HTTPS na rede local | obrigatório (certificado autoassinado) | **dispensado** — fala HTTP puro |
+| Tela ligada | `wakeLock`, pode falhar | garantido pela Activity |
+
+O app tem dois modos de captura, porque o hardware não faz os dois ao mesmo
+tempo: **Qualidade máxima** (resolução plena, atraso normal — a contagem do
+totem já compensa) e **Zero lag** (dispara na hora, resolução reduzida).
+
+### Como gerar o APK
+
+O build roda no GitHub Actions — não precisa de Android Studio nem SDK na sua
+máquina:
+
+1. Actions → **APK Android** → Run workflow (ou faça qualquer push em `android/`)
+2. Baixe o artefato `fotoboarding-apk`
+3. No S22: Configurações → Apps → acesso especial → **Instalar apps desconhecidos**
+4. Instale o APK
+
+Para compilar localmente, abra a pasta `android/` no Android Studio — ele resolve
+o Gradle wrapper sozinho.
+
+### No evento
+
+Abra o app, informe o **endereço do totem** (o IP que o servidor imprime no
+console, ex. `192.168.0.10:3000`) e o **código de 4 caracteres** da tela. Daí em
+diante o fluxo é o mesmo da versão web: o totem conduz a contagem e o app
+dispara.
+
+> O app é uma alternativa, não um substituto: `/camera.html` continua
+> funcionando e serve como plano B se o aparelho do app falhar.
+
+---
+
 ## Deploy na Vercel
 
 O mesmo código roda nos dois lugares. O que muda é onde ficam o **estado** e as
@@ -322,6 +365,12 @@ globo-photobooth/
 ├── server.js               # boot local: HTTP + HTTPS + certificado
 ├── api/server.js           # boot da Vercel: exporta o servidor
 ├── vercel.json
+├── android/                # app nativo (mesmo protocolo do servidor)
+│   └── app/src/main/java/com/globo/photobooth/
+│       ├── CameraController.kt  # CameraX: 50 MP, ZSL, foco, zoom
+│       ├── BoothClient.kt       # Socket.IO + /api/config
+│       ├── PhotoUploader.kt     # multipart | Vercel Blob
+│       └── ui/                  # interface Compose
 ├── lib/
 │   ├── app.js              # Express + Socket.IO (compartilhado)
 │   ├── config.js           # detecta local vs Vercel
