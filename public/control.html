@@ -64,6 +64,7 @@
 
     <!-- ── TAB: Shoot ── -->
     <div class="tab-panel active" id="panel-shoot">
+      <p class="camera-hint" id="source-hint">Verificando a fonte de imagem…</p>
       <div class="capture-row">
         <button class="capture-btn" id="capture-btn" disabled></button>
       </div>
@@ -110,37 +111,48 @@
     <!-- ── TAB: Camera ── -->
     <div class="tab-panel hidden" id="panel-camera">
 
-      <!-- Sony gphoto2 real controls (loaded dynamically) -->
-      <div id="sony-section" style="display:none">
+      <!-- Controles reais do celular-câmera (aparecem quando há um pareado) -->
+      <div id="phone-section" style="display:none">
         <div class="cam-section-header">
-          <span class="cam-section-icon">🎛</span>
+          <span class="cam-section-icon">📱</span>
           <div>
-            <span class="cam-section-title" id="sony-camera-name">Sony Camera</span>
-            <span class="cam-section-sub">Controles reais via USB</span>
+            <span class="cam-section-title" id="phone-name">Celular-câmera</span>
+            <span class="cam-section-sub" id="phone-sub">Controles reais do sensor</span>
           </div>
         </div>
 
-        <!-- Auto-populated select dropdowns -->
-        <div class="cam-control" id="sony-controls">
-          <p style="font-size:13px;color:var(--preto-50);text-align:center">Carregando configurações…</p>
-        </div>
-
-        <!-- Focus controls -->
-        <div class="cam-focus-section" id="focus-section">
-          <span class="setting-label">Controle de Foco</span>
-          <div class="focus-buttons">
-            <button class="focus-btn" data-focus="near-coarse" title="Perto (grosso)">◀◀◀</button>
-            <button class="focus-btn" data-focus="near" title="Perto (médio)">◀◀</button>
-            <button class="focus-btn" data-focus="near-fine" title="Perto (fino)">◀</button>
-            <button class="focus-btn focus-btn-af" id="btn-autofocus" title="Autofoco">AF</button>
-            <button class="focus-btn" data-focus="far-fine" title="Longe (fino)">▶</button>
-            <button class="focus-btn" data-focus="far" title="Longe (médio)">▶▶</button>
-            <button class="focus-btn" data-focus="far-coarse" title="Longe (grosso)">▶▶▶</button>
+        <div class="cam-control">
+          <div class="cam-ctrl-row">
+            <span class="cam-label">Lanterna</span>
+            <button class="btn btn-outline btn-sm" id="btn-torch" style="flex:1">Ligar</button>
           </div>
-          <p class="cam-note">◀ = mais perto · AF = autofoco · ▶ = mais longe</p>
+          <div class="cam-ctrl-row">
+            <span class="cam-label">Foco</span>
+            <button class="btn btn-outline btn-sm" id="btn-autofocus" style="flex:1">Focar agora (AF)</button>
+          </div>
+          <div class="cam-ctrl-row">
+            <span class="cam-label">Zoom</span>
+            <input type="range" id="ctrl-phone-zoom" min="1" max="4" step="0.1" value="1">
+            <span class="cam-val" id="val-phone-zoom">1.0x</span>
+          </div>
+          <div class="cam-ctrl-row">
+            <span class="cam-label">Exposição</span>
+            <input type="range" id="ctrl-phone-ev" min="-3" max="3" step="0.33" value="0">
+            <span class="cam-val" id="val-phone-ev">0</span>
+          </div>
+          <div class="cam-ctrl-row">
+            <span class="cam-label">Espelhar</span>
+            <button class="btn btn-outline btn-sm" id="btn-phone-mirror" style="flex:1">Desligado</button>
+          </div>
+          <div class="cam-ctrl-row">
+            <span class="cam-label">Antecipar disparo</span>
+            <input type="range" id="ctrl-lead" min="0" max="800" step="50" value="250">
+            <span class="cam-val" id="val-lead">250ms</span>
+          </div>
+          <p class="cam-note">Compensa o atraso do obturador do celular: a foto sai no “0” da contagem.</p>
         </div>
 
-        <button class="btn btn-outline btn-sm" id="btn-reload-configs" style="width:100%">🔄 Recarregar configs da câmera</button>
+        <div class="cam-control" id="phone-caps" style="font-size:12px;color:var(--preto-50);white-space:pre-line"></div>
       </div>
 
       <!-- Divider -->
@@ -148,9 +160,9 @@
         <span>Filtros de vídeo</span>
       </div>
 
-      <!-- CSS filter fallback (always available) -->
+      <!-- Filtros CSS aplicados ao preview do totem (sempre disponíveis) -->
       <div id="css-section">
-        <p class="camera-hint" id="css-hint">Ajustes visuais aplicados ao feed da câmera.</p>
+        <p class="camera-hint" id="css-hint">Ajustes visuais aplicados ao preview do totem (não alteram o arquivo final).</p>
         <div class="cam-control">
           <div class="cam-ctrl-row">
             <span class="cam-label">Brilho</span>
