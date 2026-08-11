@@ -91,7 +91,18 @@
   let videoSender = null;
   let pendingIce = [];
 
-  const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: Infinity });
+  /* O caminho e o transporte do socket mudam entre o servidor local e a
+     Vercel (lá o long-polling quebra: cada request pode cair em outra
+     instância). /api/config.js entrega isso antes deste script rodar. */
+  const BOOTH = window.__BOOTH__ || {};
+  const socket = io({
+    path: BOOTH.socketPath || '/socket.io',
+    transports: BOOTH.transports || ['polling', 'websocket'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+  });
 
   /* ═══════════════════════════════════════════════════════
      PAREAMENTO
@@ -138,6 +149,8 @@
       screenPair.classList.add('hidden');
       screenCamera.classList.remove('hidden');
       startCamera();
+      // Baixa o cliente do Blob agora, não no meio do primeiro disparo.
+      if (BOOTH.directUpload) loadBlobClient().catch(() => {});
     });
   }
 
@@ -681,7 +694,22 @@
     });
   }
 
+  /**
+   * Dois caminhos de envio:
+   *
+   * direto   o navegador manda a foto para o Vercel Blob e o servidor
+   *          recebe só a URL. Obrigatório na Vercel, onde o corpo de uma
+   *          request de função para em 4,5 MB — menos que uma foto de
+   *          12 MP.
+   * multipart o arquivo vai inteiro para o servidor. Mais simples, e é o
+   *          que roda no PC do totem, sem limite relevante.
+   */
   async function uploadPhoto(blob) {
+    if (BOOTH.directUpload) return uploadViaBlob(blob);
+    return uploadViaMultipart(blob);
+  }
+
+  async function uploadViaMultipart(blob) {
     const form = new FormData();
     form.append('photo', blob, 'capture.jpg');
     form.append('code', sessionCode);
@@ -693,6 +721,51 @@
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.success) throw new Error(data.error || `HTTP ${resp.status}`);
     return data.data;
+  }
+
+  async function uploadViaBlob(blob) {
+    await loadBlobClient();
+    const name = `capture/${sessionCode}_${Date.now()}.jpg`;
+
+    // O código da sessão é a autorização: o servidor só emite token de
+    // upload para uma sessão que existe.
+    const uploaded = await window.BoothBlob.upload(name, blob, {
+      access: 'public',
+      contentType: 'image/jpeg',
+      handleUploadUrl: '/api/blob/upload',
+      clientPayload: sessionCode,
+    });
+
+    const resp = await fetch('/api/photo/capture-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceUrl: uploaded.url,
+        code: sessionCode,
+        aspectRatio,
+        mirror,
+        source: 'phone',
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.success) throw new Error(data.error || `HTTP ${resp.status}`);
+    return data.data;
+  }
+
+  /* Carregado sob demanda: são ~156 KB que só o modo Blob usa. */
+  let blobClientPromise = null;
+  function loadBlobClient() {
+    if (window.BoothBlob) return Promise.resolve();
+    if (!blobClientPromise) {
+      blobClientPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/js/vendor/blob-client.js';
+        script.onload = () => (window.BoothBlob ? resolve() : reject(new Error('blob-client não expôs BoothBlob')));
+        script.onerror = () => reject(new Error('Falha ao carregar o cliente do Blob'));
+        document.head.appendChild(script);
+      }).catch(err => { blobClientPromise = null; throw err; });
+    }
+    return blobClientPromise;
   }
 
   function status(state, detail) {

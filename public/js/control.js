@@ -84,7 +84,17 @@
   let phoneMirror = false;
   let hasCamera   = false;
 
-  const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: Infinity });
+  /* Caminho e transporte vêm de /api/config.js: na Vercel o Socket.IO
+     roda sob /api/server e só com WebSocket. */
+  const BOOTH = window.__BOOTH__ || {};
+  const socket = io({
+    path: BOOTH.socketPath || '/socket.io',
+    transports: BOOTH.transports || ['polling', 'websocket'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+  });
 
   /* ═══════════════════════════════════════════════════════
      PAREAMENTO

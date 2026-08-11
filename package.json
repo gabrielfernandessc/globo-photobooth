@@ -1,15 +1,21 @@
 {
   "name": "globo-photobooth",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "main": "server.js",
   "dependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
+    "@vercel/blob": "^2.8.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "multer": "^2.0.2",
     "qrcode": "^1.5.4",
+    "redis": "^6.2.1",
     "selfsigned": "^2.4.1",
     "sharp": "^0.34.5",
     "socket.io": "^4.7.5"
+  },
+  "browser": {
+    "undici": "./src/shims/undici.js"
   },
   "description": "Totem de Foto Globo para Eventos Corporativos — celular como câmera, preview em outra tela",
   "engines": {
@@ -18,6 +24,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "build:vendor": "bun scripts/build-vendor.js",
     "share": "cloudflared tunnel --protocol http2 --url http://localhost:3000"
   }
 }
