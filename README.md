@@ -190,11 +190,99 @@ depende da internet.
 
 ---
 
+## Deploy na Vercel
+
+O mesmo código roda nos dois lugares. O que muda é onde ficam o **estado** e as
+**fotos** — numa função serverless não existe memória compartilhada nem disco.
+
+| | Local | Vercel |
+|:--|:--|:--|
+| Sessões | memória | Redis (Marketplace) |
+| Fotos | `public/uploads/` | Vercel Blob |
+| Socket.IO | `/socket.io`, polling + ws | `/api/server/socket.io`, só ws |
+| Upload da foto | multipart, 60 MB | direto do navegador pro Blob |
+| HTTPS | certificado autoassinado | da plataforma |
+
+Os drivers são escolhidos sozinhos: `VERCEL` e `REDIS_URL` já vêm da própria
+plataforma. Não há nada para configurar à mão.
+
+### Passo a passo
+
+- **1.** Importe o repositório em [vercel.com/new](https://vercel.com/new).
+- **2.** Em **Storage → Create Database**, crie um **Blob** e conecte ao projeto.
+- **3.** Em **Storage**, crie também um **Redis** (Marketplace) e conecte ao projeto.
+  Isso define `REDIS_URL` e liga o modo distribuído.
+- **4.** Confirme que **Fluid compute** está ligado em Settings → Functions
+  (padrão em projetos novos). Sem ele não há WebSocket.
+- **5.** Deploy.
+
+Confira em `https://SEU-APP.vercel.app/api/health`:
+
+```json
+{ "ok": true, "state": "redis", "storage": "blob" }
+```
+
+Se aparecer `"state": "memory"`, o Redis não está conectado — o pareamento vai
+funcionar de forma intermitente, porque cada aparelho pode cair numa instância
+diferente.
+
+### Por que cada peça existe
+
+**Redis.** Uma conexão WebSocket é fixada numa instância, mas a próxima pode ir
+para outra. Sem estado compartilhado, o celular numa instância e o totem em
+outra simplesmente não se enxergam. O Redis guarda as sessões e leva o pub/sub
+entre instâncias.
+
+**Blob.** O corpo de uma request de função para em **4,5 MB**, e uma foto de
+12 MP tem ~6 MB. Na Vercel o celular pede um token, manda a foto do navegador
+direto para o Blob e o servidor recebe só a URL.
+
+**Presença em conjuntos do Redis.** O `fetchSockets()` do Socket.IO faz um
+broadcast com timeout para todas as instâncias — uma instância lenta faz a
+presença inteira virar "ninguém aqui". Três `SCARD` resolvem isso de forma
+exata e barata.
+
+### Regerar o cliente do Blob
+
+`public/js/vendor/blob-client.js` é versionado para o deploy não precisar de
+build step. Se atualizar o `@vercel/blob`, regere:
+
+```bash
+npm run build:vendor
+```
+
+### O que pesar antes de usar num evento
+
+A Vercel resolve domínio, HTTPS e CDN, mas para um totem em operação há três
+coisas que não somem:
+
+- **A conexão WebSocket cai no fim da duração máxima da função.** O cliente
+  reconecta e reassume a sessão sozinho, mas um disparo enviado exatamente
+  nesse intervalo se perde. Na fila de um evento isso é uma foto refeita.
+- **Depende da internet do local.** Caiu o Wi-Fi, caiu o totem. Na versão local
+  o servidor está na mesma sala e o WebRTC é P2P.
+- **Wi-Fi de convidado costuma ter isolamento de cliente**, que bloqueia P2P
+  entre o celular e o totem. Sem um servidor TURN, o preview não fecha conexão.
+
+Para operar de verdade, o servidor local continua sendo a opção mais segura. A
+Vercel é excelente para demo, homologação e para servir a página da foto.
+
+---
+
 ## Estrutura
 
 ```
 globo-photobooth/
-├── server.js               # Express + Socket.IO + Sharp + QR + HTTPS
+├── server.js               # boot local: HTTP + HTTPS + certificado
+├── api/server.js           # boot da Vercel: exporta o servidor
+├── vercel.json
+├── lib/
+│   ├── app.js              # Express + Socket.IO (compartilhado)
+│   ├── config.js           # detecta local vs Vercel
+│   ├── store.js            # sessões: memória | Redis
+│   ├── storage.js          # fotos: disco | Vercel Blob
+│   └── photo.js            # pipeline do Sharp
+├── scripts/build-vendor.js # empacota o cliente do Blob
 ├── certs/                  # certificado autoassinado (gerado no 1º boot)
 └── public/
     ├── index.html          # landing
@@ -209,8 +297,9 @@ globo-photobooth/
     ├── js/
     │   ├── display.js      # receptor WebRTC, contagem, resultado, QR
     │   ├── camera.js       # ImageCapture, WebRTC sender, controles do sensor
-    │   └── control.js      # disparo, moldura, controles do sensor
-    └── uploads/            # original · final · web · thumb
+    │   ├── control.js      # disparo, moldura, controles do sensor
+    │   └── vendor/         # socket.io + cliente do Blob
+    └── uploads/            # original · final · web · thumb (modo local)
 ```
 
 ## Tecnologias
@@ -223,6 +312,7 @@ globo-photobooth/
 | MediaStream Image Capture | foto na resolução máxima do sensor |
 | Sharp | rotação, recorte, moldura e derivadas |
 | qrcode | QR Code gerado localmente (funciona sem internet) |
+| Redis + Vercel Blob | estado e fotos quando roda serverless |
 
 ## Design
 
