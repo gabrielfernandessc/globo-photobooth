@@ -468,8 +468,12 @@
      WEBRTC — envia o preview para a tela do totem
      ═══════════════════════════════════════════════════════ */
 
+  /* Os servidores ICE vêm do servidor: assim dá para acrescentar um TURN
+     por variável de ambiente sem tocar no cliente. Sem TURN, celular no
+     4G contra totem no Wi-Fi não fecha conexão. */
   const RTC_CONFIG = {
-    iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
+    iceServers: BOOTH.iceServers || [{ urls: ['stun:stun.l.google.com:19302'] }],
+    iceCandidatePoolSize: 2,
   };
 
   function restartPeerConnection() {
@@ -546,20 +550,89 @@
   });
 
   socket.on('display-ready', () => { if (track) createPeerConnection(); });
-  socket.on('display-disconnected', () => setLink('disconnected'));
+  socket.on('display-disconnected', () => { setLink('disconnected'); stopRelay(); });
 
   function setLink(state) {
+    if (relaying) {
+      dotLink.className = 'dot on';
+      txtLink.textContent = 'Transmitindo (via servidor)';
+      return;
+    }
     const map = {
       connected: ['on', 'Transmitindo'],
       connecting: ['', 'Conectando…'],
       new: ['', 'Conectando…'],
       disconnected: ['off', 'Totem offline'],
-      failed: ['off', 'Falha na conexão'],
+      failed: ['off', 'Sem rota direta'],
       closed: ['off', 'Desconectado'],
     };
     const [cls, label] = map[state] || ['', state];
     dotLink.className = `dot ${cls}`;
     txtLink.textContent = label;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     PREVIEW RELAYADO — plano B do WebRTC
+
+     Quando o ICE não acha rota (4G contra Wi-Fi, ou rede com isolamento
+     de cliente), o preview passa a ir por onde o celular e o totem já
+     conversam: o próprio servidor. Fica mais pesado e com mais latência,
+     mas independe da topologia da rede.
+
+     A FOTO não muda: continua saindo do sensor em resolução máxima e
+     subindo por HTTPS. O relay degrada só o enquadramento ao vivo.
+     ═══════════════════════════════════════════════════════ */
+
+  const RELAY = BOOTH.relay || { width: 640, fps: 8, quality: 0.5 };
+  let relaying = false;
+  let relayTimer = null;
+  let relayCanvas = null;
+  let relayCtx = null;
+  let relayInFlight = false;
+
+  socket.on('preview-relay', ({ enabled }) => (enabled ? startRelay() : stopRelay()));
+
+  function startRelay() {
+    if (relaying || !track) return;
+    relaying = true;
+    setLink('connected');
+    toast('Preview pelo servidor (sem rota direta)', '', 3200);
+
+    if (!relayCanvas) {
+      relayCanvas = document.createElement('canvas');
+      relayCtx = relayCanvas.getContext('2d', { alpha: false });
+    }
+    relayTimer = setInterval(sendRelayFrame, Math.round(1000 / RELAY.fps));
+  }
+
+  function stopRelay() {
+    if (!relaying) return;
+    relaying = false;
+    clearInterval(relayTimer);
+    relayTimer = null;
+    setLink(pc?.connectionState || 'disconnected');
+  }
+
+  async function sendRelayFrame() {
+    // Nada de enfileirar frames: se o anterior ainda não saiu, pula.
+    if (relayInFlight || busy || !video.videoWidth) return;
+    relayInFlight = true;
+    try {
+      const scale = RELAY.width / video.videoWidth;
+      relayCanvas.width = RELAY.width;
+      relayCanvas.height = Math.round(video.videoHeight * scale);
+      relayCtx.drawImage(video, 0, 0, relayCanvas.width, relayCanvas.height);
+
+      const blob = await new Promise(r => relayCanvas.toBlob(r, 'image/jpeg', RELAY.quality));
+      if (!blob) return;
+      socket.emit('preview-frame', {
+        code: sessionCode,
+        data: await blob.arrayBuffer(),
+        width: relayCanvas.width,
+        height: relayCanvas.height,
+      });
+    } catch { /* frame perdido não é problema */ }
+    finally { relayInFlight = false; }
   }
 
   /* ═══════════════════════════════════════════════════════

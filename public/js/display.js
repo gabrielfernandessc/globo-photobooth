@@ -26,6 +26,7 @@
 
   const video        = $('camera-feed');
   const remoteVideo  = $('remote-feed');
+  const relayFeed    = $('relay-feed');
   const frameOverlay = $('frame-overlay');
   const modeBadge    = $('mode-badge');
   const modeLabel    = $('mode-label');
@@ -171,13 +172,14 @@
     setDiagnostics({ fonte: 'Celular: aguardando vídeo…' });
     statusText.textContent = 'Conectando ao celular…';
 
+    // Um celular está pareado: se o vídeo P2P não vier, o certo é
+    // relayar a imagem dele, não desistir e cair para a webcam do totem.
     clearTimeout(phoneStreamTimeout);
     phoneStreamTimeout = setTimeout(() => {
-      if (source === 'phone') return;
-      setDiagnostics({ fonte: 'Celular sem vídeo — usando webcam' });
-      renderPairPanel();
-      startWebcamMode();
-    }, 10000);
+      if (source === 'phone' && !relayActive) return;
+      setDiagnostics({ fonte: 'Sem rota direta — relayando pelo servidor' });
+      enableRelay();
+    }, RELAY_AFTER_MS);
   }
 
   /** QR que abre a página da câmera já com o código preenchido. */
@@ -199,10 +201,12 @@
     source = next;
 
     const phone = next === 'phone';
-    remoteVideo.classList.toggle('hidden', !phone);
+    // No modo relay quem mostra a imagem é o <img>, não o <video>.
+    remoteVideo.classList.toggle('hidden', !phone || relayActive);
+    relayFeed.classList.toggle('hidden', !phone || !relayActive);
     video.classList.toggle('hidden', phone);
     modeBadge.classList.toggle('hidden', !phone);
-    modeLabel.textContent = 'Celular';
+    modeLabel.textContent = relayActive ? 'Celular · servidor' : 'Celular';
     pairPanel?.classList.toggle('hidden', phone);
 
     if (phone && localStream) {
@@ -250,9 +254,13 @@
      WEBRTC — recebe o preview do celular
      ═══════════════════════════════════════════════════════ */
 
+  /* Servidores ICE vindos do servidor, para dar para acrescentar um TURN
+     por variável de ambiente sem tocar no cliente. */
   const RTC_CONFIG = {
-    iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
+    iceServers: BOOTH.iceServers || [{ urls: ['stun:stun.l.google.com:19302'] }],
+    iceCandidatePoolSize: 2,
   };
+  const RELAY_AFTER_MS = BOOTH.relay?.fallbackAfterMs ?? 8000;
 
   socket.on('camera-connected', () => {
     awaitPhoneStream();
@@ -261,6 +269,7 @@
 
   socket.on('camera-disconnected', () => {
     clearTimeout(phoneStreamTimeout);
+    disableRelay();
     closePeer();
     source = 'none';
     remoteVideo.srcObject = null;
@@ -288,9 +297,13 @@
         };
         pc.onicecandidate = e => { if (e.candidate) signal({ type: 'ice', candidate: e.candidate }); };
         pc.onconnectionstatechange = () => {
-          if (['failed', 'closed'].includes(pc.connectionState)) {
-            setDiagnostics({ fonte: 'Celular: falha na conexão' });
+          // Sem rota P2P não adianta insistir: cai para o relay pelo
+          // servidor, que independe da rede dos dois aparelhos.
+          if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+            setDiagnostics({ fonte: 'Celular: sem rota direta' });
+            enableRelay();
           }
+          if (pc.connectionState === 'connected') disableRelay();
         };
 
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -317,6 +330,53 @@
     pc = null;
     pendingIce = [];
   }
+
+  /* ═══════════════════════════════════════════════════════
+     PREVIEW RELAYADO — plano B do WebRTC
+
+     O WebRTC quer uma rota direta entre celular e totem. Ela não existe
+     quando o celular está no 4G, nem em Wi-Fi de convidado com
+     isolamento de cliente — e um TURN, que resolveria, é serviço pago à
+     parte. Enquanto não houver TURN, o preview cai para frames JPEG
+     pelo mesmo socket que já liga os dois ao servidor.
+
+     Mais latência e menos fluidez, mas funciona em qualquer rede. E não
+     toca na foto: aquela sai do sensor e sobe por HTTPS.
+     ═══════════════════════════════════════════════════════ */
+
+  let relayActive = false;
+  let relayUrl = null;
+
+  function enableRelay() {
+    if (relayActive || !sessionCode) return;
+    relayActive = true;
+    socket.emit('preview-relay', { code: sessionCode, enabled: true });
+    clearTimeout(phoneStreamTimeout);
+    setDiagnostics({ fonte: 'Celular (via servidor)' });
+    useSource('phone');
+  }
+
+  function disableRelay() {
+    if (!relayActive) return;
+    relayActive = false;
+    socket.emit('preview-relay', { code: sessionCode, enabled: false });
+    relayFeed.classList.add('hidden');
+    if (relayUrl) { URL.revokeObjectURL(relayUrl); relayUrl = null; }
+    setDiagnostics({ fonte: 'Celular (WebRTC)' });
+  }
+
+  socket.on('preview-frame', ({ data }) => {
+    if (!data) return;
+    const url = URL.createObjectURL(new Blob([data], { type: 'image/jpeg' }));
+    // Revoga o anterior só depois que o novo pintou, senão pisca.
+    relayFeed.onload = () => {
+      if (relayUrl) URL.revokeObjectURL(relayUrl);
+      relayUrl = url;
+    };
+    relayFeed.src = url;
+    relayFeed.classList.remove('hidden');
+    remoteVideo.classList.add('hidden');
+  });
 
   /* ═══════════════════════════════════════════════════════
      CAPTURA
@@ -635,9 +695,11 @@
     const filter = `brightness(${camFilters.brightness}%) contrast(${camFilters.contrast}%) saturate(${camFilters.saturation}%)`;
     video.style.filter = filter;
     remoteVideo.style.filter = filter;
+    relayFeed.style.filter = filter;
     // A webcam local é espelhada por CSS; o zoom precisa preservar isso.
     video.style.transform = `scaleX(-1) scale(${camZoom})`;
     remoteVideo.style.transform = `scale(${camZoom})`;
+    relayFeed.style.transform = `scale(${camZoom})`;
   }
 
   function setupDraggableResize() {
@@ -764,6 +826,12 @@
   }
 
   function refreshPreviewDiagnostics() {
+    if (relayActive) {
+      const w = relayFeed.naturalWidth || 0;
+      const h = relayFeed.naturalHeight || 0;
+      setDiagnostics({ preview: w && h ? `${w}×${h} relay` : '--' });
+      return;
+    }
     const el = source === 'phone' ? remoteVideo : video;
     const w = el.videoWidth || 0;
     const h = el.videoHeight || 0;

@@ -144,12 +144,58 @@ totem**, nunca o arquivo final.
 | "A câmera só abre em HTTPS" | acessou por `http://` | use a URL `https://` da lista do boot |
 | "Permissão negada" | recusou o prompt | ícone do cadeado → Permissões → Câmera → Permitir |
 | "Câmera em uso por outro app" | app de câmera aberto em segundo plano | feche-o e recarregue |
-| Preview não chega ao totem | redes diferentes | ponha os dois no mesmo Wi-Fi |
+| "Sem rota direta" no celular | WebRTC sem TURN | funciona mesmo assim, relayado — veja abaixo |
 | Foto sai na resolução do vídeo | `ImageCapture` indisponível | o chip abaixo do visor mostra o nível usado; use o Chrome |
 
 O visor do celular mostra sempre a resolução do vídeo e a da foto. Depois de cada
 captura, a linha abaixo do botão informa em qual nível a foto foi tirada
 (`still 4000×3000`, `grabFrame …`, `vídeo …`).
+
+---
+
+## Quando o preview não conecta
+
+O WebRTC precisa de uma **rota direta** entre celular e totem. Ela não existe em
+dois casos comuns:
+
+- o celular está no 4G e o totem no Wi-Fi;
+- os dois estão no mesmo Wi-Fi, mas a rede tem **isolamento de cliente** —
+  padrão em Wi-Fi de convidado corporativo.
+
+Nesses casos o ICE falha e o celular mostra **"Sem rota direta"**.
+
+### O app não para por isso
+
+O preview cai automaticamente para **frames JPEG relayados pelo servidor**, pelo
+mesmo socket que já liga os dois aparelhos. O totem mostra `Celular · servidor` e
+o celular, `Transmitindo (via servidor)`. Funciona em qualquer rede.
+
+> **A foto não é afetada.** Ela sai do sensor em resolução máxima e sobe por
+> HTTPS — nunca pelo WebRTC. O relay degrada só o enquadramento ao vivo.
+
+Ajuste o peso do relay em `.env`:
+
+| Variável | Padrão | Efeito |
+|:--|:--|:--|
+| `RELAY_WIDTH` | `640` | largura dos frames |
+| `RELAY_FPS` | `8` | fluidez × banda |
+| `RELAY_QUALITY` | `50` | qualidade JPEG do preview |
+| `RELAY_FALLBACK_MS` | `8000` | espera antes de desistir do P2P |
+
+### Para ter o preview bom em qualquer rede: TURN
+
+Um servidor TURN relaya a mídia dentro do próprio WebRTC, mantendo a fluidez e a
+latência baixa. É a solução correta — o relay por JPEG é o plano B.
+
+```bash
+TURN_URLS=turn:seu-turn:3478?transport=udp,turns:seu-turn:5349?transport=tcp
+TURN_USERNAME=usuario
+TURN_CREDENTIAL=segredo
+```
+
+Cloudflare Realtime TURN, Metered e Twilio têm plano gratuito suficiente para um
+evento. Com `TURN_URLS` definido, o `/api/config` passa a responder
+`"hasTurn": true` e o P2P fecha mesmo entre redes diferentes.
 
 ---
 

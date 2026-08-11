@@ -170,7 +170,8 @@ html, body {
 .stage-card[data-ratio="4:3"] { aspect-ratio: 4/3; }
 
 #camera-feed,
-#remote-feed {
+#remote-feed,
+#relay-feed {
   position: absolute;
   top: 0; left: 0; width: 100%; height: 100%;
   object-fit: cover;
@@ -178,6 +179,8 @@ html, body {
   border: none;
   background: var(--black-5);
 }
+/* O relay chega em ~8 fps: sem o cross-fade, a troca de frame pisca. */
+#relay-feed { transition: opacity .08s linear; }
 /* A webcam do totem fica de frente para a pessoa: espelhar é o natural.
    O feed do celular já vem na orientação correta da cena. */
 #camera-feed { transform: scaleX(-1); }
