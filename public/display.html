@@ -65,11 +65,11 @@
           <div class="resize-handle" id="resize-handle"></div>
           <div class="stage-card" id="stage-card" data-ratio="3:4">
 
-            <!-- Câmera (webcam) -->
+            <!-- Câmera do próprio totem (fallback) -->
             <video id="camera-feed" autoplay playsinline muted></video>
 
-            <!-- Câmera (gphoto2 MJPEG) -->
-            <img id="gphoto-feed" alt="Preview" class="hidden" />
+            <!-- Câmera do celular, via WebRTC (fonte principal) -->
+            <video id="remote-feed" class="hidden" autoplay playsinline muted></video>
 
             <!-- Frame overlay -->
             <img id="frame-overlay" alt="" />
@@ -77,7 +77,7 @@
             <!-- Mode badge -->
             <div class="mode-badge hidden" id="mode-badge">
               <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4"/></svg>
-              <span id="mode-label">Sony</span>
+              <span id="mode-label">Celular</span>
             </div>
 
             <!-- Idle text overlay -->
@@ -104,6 +104,17 @@
           <p class="preview-subtext">Centralize-se no quadro e aguarde a contagem regressiva. A gente registra esse momento com você.</p>
           <p class="preview-hint">Dica: mantenha o rosto visível e fique confortável no enquadramento.</p>
           <div id="status-text" class="status-text">Aguardando liberação...</div>
+
+          <!-- Pareamento do celular-câmera -->
+          <div class="pair-panel" id="pair-panel">
+            <img class="pair-qr" id="pair-qr" alt="QR para parear o celular">
+            <div class="pair-info">
+              <strong>Use o celular como câmera</strong>
+              <span>Escaneie com o Galaxy S22 para transmitir o preview e capturar em resolução máxima.</span>
+              <code id="pair-url"></code>
+              <button class="pair-dismiss" id="btn-dismiss-pair">Ocultar</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -153,6 +164,7 @@
     </div>
 
     <div class="multicolor-bar"></div>
+    <div class="diagnostics-info" id="diagnostics-info"></div>
     <div class="build-info" id="build-info">v...</div>
   </div>
 
@@ -164,6 +176,7 @@
       if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
       else document.exitFullscreen();
     }
+    document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', () => {
       const icon = document.getElementById('fs-icon');
       if (document.fullscreenElement) icon.innerHTML = '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>';
