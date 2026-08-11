@@ -1,97 +1,230 @@
 # 🎬 Globo Photo Booth
 
-Totem de foto para eventos corporativos com controle remoto, moldura customizada e compartilhamento via QR Code.
+Totem de foto para eventos corporativos. **O celular é a câmera**, a foto sai na
+resolução máxima do sensor e o preview aparece ao vivo em outra tela.
 
-## Funcionalidades
+---
 
-- 📸 **Preview em tempo real** — Câmera pelo navegador, compatível com webcam, câmera virtual ou placa/capture device
-- 📱 **Controle remoto** — Opere a distância pelo celular
-- 🔗 **Pareamento por código** — Conecte o celular ao totem com um código de 4 caracteres
-- 🖼️ **Moldura customizada** — Upload de frame PNG (4:5 Instagram e 16:9)
-- ⏱️ **Countdown ajustável** — 3, 5 ou 10 segundos
-- 📲 **QR Code** — Pessoa escaneia e acessa uma página de download em alta qualidade
-- 🧩 **Composição no servidor** — Foto final com moldura gerada via Sharp, sem ImgBB
+## Como funciona
 
-## Setup rápido
-
-### 1. Pré-requisitos
-- Node.js 18+
-- Navegador com acesso à câmera
-- URL HTTPS em produção, necessária para `getUserMedia`
-
-### 2. Configuração
-```bash
-# Clone ou copie o projeto
-cd globo-photobooth
-
-# Instale as dependências
-npm install
-
-# Sem ImgBB: as fotos finais são salvas em public/uploads/final no servidor
+```
+  Galaxy S22                     Servidor                    Tela do totem
+  /camera.html                   Node.js                     /display.html
+  ───────────                    ───────                     ─────────────
+  track de vídeo ──── WebRTC (P2P, direto na LAN) ─────────▶  preview ao vivo
+                                                                   │
+                       ◀───── camera-shoot (socket) ──────────  contagem chega a 0
+  ImageCapture
+  .takePhoto()
+  4000×3000
+        │
+        └── POST /api/photo/capture (JPEG binário) ──▶ crop + moldura ──▶ QR na tela
 ```
 
-### 3. Executar localmente para desenvolvimento
+O preview e a foto são **caminhos separados de propósito**:
+
+| | Preview | Foto final |
+|:--|:--|:--|
+| Origem | track de vídeo (comprimido para streaming) | `ImageCapture.takePhoto()` |
+| Resolução | 1080p / 1440p | máxima do sensor (12 MP no S22) |
+| Processamento | encoder WebRTC | pipeline de still do Android: HDR, multiframe, redução de ruído |
+
+É por isso que a foto sai muito melhor do que um "print" do preview — ela nunca
+passa pelo vídeo.
+
+---
+
+## Setup
+
+### 1. Instalar
+
+```bash
+npm install
+```
+
+### 2. Rodar
+
 ```bash
 npm start
-# Acesse http://localhost:3000
 ```
 
-### 4. No evento
-1. **Computador/totem**: Abra `https://SUA-URL/display.html` e permita o acesso à câmera
-2. **Celular**: Acesse `https://SUA-URL/control.html`
-3. Digite o código de 4 caracteres exibido na tela
-4. Configure a moldura e comece a tirar fotos!
+O servidor sobe em HTTP **e** HTTPS e imprime os endereços:
 
-## Deploy no Render.com (grátis)
+```
+🎬  Globo Photo Booth
+   HTTP   http://localhost:3000
+          http://192.168.0.42:3000
 
-1. Suba o código para um repositório GitHub
-2. Acesse [render.com](https://render.com) e crie uma conta
-3. New → Web Service → conecte o repositório
-4. Build Command: `npm install`
-5. Start Command: `node server.js`
-6. Deploy!
+   HTTPS  https://localhost:3443
+          https://192.168.0.42:3443   ← use esta no celular
+```
 
-> O app roda em modo web: a câmera vem do navegador da tela do totem. Para usar uma Sony A7III, ela precisa aparecer para o navegador como webcam/capture device.
+> **Por que HTTPS?** O Chrome do Android só libera `getUserMedia` em contexto
+> seguro. Na primeira execução o servidor gera um certificado autoassinado em
+> `certs/` cobrindo o IP da máquina. O celular mostra um aviso uma única vez —
+> toque em **Avançado → Prosseguir** e o Chrome passa a tratar a origem como
+> segura, liberando câmera e WebRTC.
 
-> O filesystem do Render pode ser efêmero em alguns planos. Para retenção permanente das fotos após reinícios/deploys, use Render Disk ou um storage externo.
+### 3. No evento
 
-> **Dica**: Use o [UptimeRobot](https://uptimerobot.com) (grátis) para pingar sua URL a cada 5 minutos e evitar cold starts.
+1. **Tela do totem** — abra `https://SEU-IP:3443/display.html`. Aparece um código
+   de 4 caracteres e um **QR Code de pareamento**.
+2. **Galaxy S22** — escaneie o QR. A página `/camera.html` abre já com o código
+   preenchido. Aceite a permissão de câmera.
+3. O preview do celular aparece na tela do totem em segundos.
+4. **Controle** (opcional, num segundo aparelho) — `https://SEU-IP:3443/control.html`,
+   digite o mesmo código. Dá para disparar pelo próprio celular-câmera também.
+
+> Totem e celular precisam estar **na mesma rede Wi-Fi**. O vídeo vai direto de um
+> para o outro (P2P) — o servidor só faz a apresentação inicial.
+
+---
+
+## Qualidade da imagem
+
+O que o app faz para não desperdiçar nada do sensor:
+
+- **Sem upscale.** O recorte na proporção escolhida é um corte central em pixels
+  nativos. Uma foto 4000×3000 vira 2250×3000 em 3:4 — nenhum pixel é inventado.
+- **Uma única codificação JPEG.** Rotação por EXIF, corte, espelho e moldura
+  acontecem numa só passagem do Sharp.
+- **Croma 4:4:4** e qualidade 100 no arquivo master (configurável).
+- **Foco, exposição e white balance contínuos** aplicados ao track.
+- **Três derivadas** por foto:
+
+| Arquivo | Onde | Para quê |
+|:--|:--|:--|
+| `uploads/final` | master, resolução do sensor | botão "Baixar em alta qualidade" |
+| `uploads/web` | lado maior 2048px, q88 | preview da página do QR (rápido no 4G) |
+| `uploads/thumb` | 480px | galeria do controle |
+| `uploads/original` | JPEG cru do celular, EXIF intacto | arquivo do evento |
+
+O master também é copiado para `Downloads/Globo-Photobooth` no computador do totem.
+
+> **Privacidade:** os arquivos públicos (final, web, thumb) saem **sem EXIF** — o
+> GPS do celular não vaza no arquivo que o convidado baixa. O EXIF completo fica
+> só no original, no servidor.
+
+### Antecipação do disparo
+
+O obturador do Android tem latência. O totem dispara o celular alguns
+milissegundos **antes** do "0" para a foto sair no momento certo. Ajuste em
+**Controle → Câmera → Antecipar disparo** (padrão 250 ms).
+
+---
+
+## Telas
+
+| Página | Onde abrir | O que faz |
+|:--|:--|:--|
+| `/display.html` | tela do totem | preview, contagem, moldura, resultado + QR |
+| `/camera.html` | **Galaxy S22** | câmera: transmite o preview e tira a foto |
+| `/control.html` | segundo aparelho | dispara, moldura, timer, controles do sensor |
+
+### O que o controle comanda no celular de verdade
+
+Lanterna, autofoco, zoom óptico/digital, compensação de exposição e espelhamento —
+tudo aplicado ao sensor via `applyConstraints`, não como filtro. Os sliders de
+brilho/contraste/saturação continuam existindo, mas afetam **só o preview do
+totem**, nunca o arquivo final.
+
+### Atalhos na tela do totem
+
+| Tecla | Ação |
+|:--|:--|
+| `Espaço` | dispara a contagem |
+| `Esc` | volta ao preview |
+
+---
+
+## Se a câmera do celular não abrir
+
+| Sintoma | Causa | Solução |
+|:--|:--|:--|
+| "A câmera só abre em HTTPS" | acessou por `http://` | use a URL `https://` da lista do boot |
+| "Permissão negada" | recusou o prompt | ícone do cadeado → Permissões → Câmera → Permitir |
+| "Câmera em uso por outro app" | app de câmera aberto em segundo plano | feche-o e recarregue |
+| Preview não chega ao totem | redes diferentes | ponha os dois no mesmo Wi-Fi |
+| Foto sai na resolução do vídeo | `ImageCapture` indisponível | o chip abaixo do visor mostra o nível usado; use o Chrome |
+
+O visor do celular mostra sempre a resolução do vídeo e a da foto. Depois de cada
+captura, a linha abaixo do botão informa em qual nível a foto foi tirada
+(`still 4000×3000`, `grabFrame …`, `vídeo …`).
+
+---
+
+## Fallback sem celular
+
+Se nenhum celular estiver pareado, o totem usa a própria webcam — sem upscale,
+com o mesmo pipeline de moldura e QR. É o modo de emergência, não o modo padrão:
+uma webcam de 1080p entrega ~2 MP contra os 12 MP do S22.
+
+---
+
+## Configuração
+
+Copie `.env.example` para `.env`. Os que importam:
+
+| Variável | Padrão | Para quê |
+|:--|:--|:--|
+| `FINAL_JPEG_QUALITY` | `100` | qualidade do master (95 corta o tamanho pela metade sem diferença visível) |
+| `MAX_FINAL_LONG_SIDE` | `0` | teto do lado maior; 0 = resolução do sensor |
+| `WEB_LONG_SIDE` | `2048` | derivada servida na página do QR |
+| `SAVE_ORIGINAL` | `true` | guarda o JPEG cru do celular com EXIF |
+| `SAVE_TO_DOWNLOADS` | `true` | copia o master para a pasta Downloads |
+| `ENABLE_HTTPS` | `true` | desligue só se já houver HTTPS na frente (proxy/túnel) |
+
+---
+
+## Acesso de fora da rede local
+
+```bash
+npm run share
+```
+
+Sobe um túnel Cloudflare com URL HTTPS pública. Útil para testar remotamente,
+mas para o evento prefira a rede local: o WebRTC fica P2P e o preview não
+depende da internet.
+
+> Fora da mesma LAN, o WebRTC pode não fechar conexão sem um servidor TURN.
+
+---
 
 ## Estrutura
 
 ```
 globo-photobooth/
-├── server.js           # Express + Socket.IO
-├── package.json
-├── .env.example
+├── server.js               # Express + Socket.IO + Sharp + QR + HTTPS
+├── certs/                  # certificado autoassinado (gerado no 1º boot)
 └── public/
-    ├── index.html      # Landing page
-    ├── display.html    # Tela do totem
-    ├── control.html    # Controle remoto (celular)
+    ├── index.html          # landing
+    ├── display.html        # tela do totem
+    ├── camera.html         # celular como câmera
+    ├── control.html        # controle remoto
     ├── css/
-    │   ├── design-system.css  # Design system Globo
+    │   ├── design-system.css
     │   ├── display.css
+    │   ├── camera.css
     │   └── control.css
-    └── js/
-        ├── display.js  # Câmera, captura, QR
-        └── control.js  # Pareamento, controle
+    ├── js/
+    │   ├── display.js      # receptor WebRTC, contagem, resultado, QR
+    │   ├── camera.js       # ImageCapture, WebRTC sender, controles do sensor
+    │   └── control.js      # disparo, moldura, controles do sensor
+    └── uploads/            # original · final · web · thumb
 ```
 
 ## Tecnologias
 
 | Stack | Uso |
 |:---|:---|
-| Node.js + Express | Servidor web |
-| Socket.IO | Comunicação em tempo real |
-| Canvas API | Captura web em alta resolução |
-| Sharp | Composição da foto final com moldura |
-| QR Server API | Geração da imagem do QR Code |
+| Node.js + Express | servidor web e HTTPS |
+| Socket.IO | sessões, sinalização WebRTC, relay de controles |
+| WebRTC | preview do celular para o totem, P2P |
+| MediaStream Image Capture | foto na resolução máxima do sensor |
+| Sharp | rotação, recorte, moldura e derivadas |
+| qrcode | QR Code gerado localmente (funciona sem internet) |
 
 ## Design
 
-Baseado no **Guia de Marca Globo 2025 v2.0**:
-- Cores: Azul `#05A6FF`, Roxo `#8800F8`, Vermelho `#FF0C1F`, Amarelo `#FFD006`
-- Gradiente Globo horizontal
-- Tipografia: Inter (fallback para Globotipo)
-- Border radius: 15px
-- Espaçamento: Grid scale (4, 8, 16, 24, 32, 48, 64, 96, 128px)
+Guia de Marca Globo 2025 v2.0 — azul `#05A6FF`, roxo `#8800F8`, vermelho `#FF0C1F`,
+amarelo `#FFD006`; tipografia Inter; raio 15px; grid de espaçamento 4/8/16/24/32/48/64.
