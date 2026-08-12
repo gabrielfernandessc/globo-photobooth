@@ -51,6 +51,12 @@ jobs:
           printf '%s' "$KEYSTORE_B64" | base64 -d > android/release.p12
           echo "chave restaurada ($(stat -c%s android/release.p12) bytes)"
 
+      # Portão antes de compilar o que vai para o aparelho: sem isto o CI
+      # publicava uma release sem ter validado nada além de compilar.
+      - name: Testes unitários
+        working-directory: android
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
       - name: Compilar APK de debug
         working-directory: android
         env:

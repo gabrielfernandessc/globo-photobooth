@@ -1,0 +1,37 @@
+name: Testes
+
+# Roda em tudo que toca o servidor. É o portão: nada de backend é
+# publicado sem esta suíte passar.
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - 'android/**'
+      - '**.md'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # node:sqlite exige Node 22+. O totem roda a mesma versão.
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Sem `|| true` em lugar nenhum: um teste crítico vermelho tem que
+      # parar o pipeline, não virar aviso que ninguém lê.
+      #
+      # Inclui a suíte de sistema, que sobe `node server.js` de verdade,
+      # mata o processo no meio e mede uma sequência de capturas.
+      - name: Suíte completa
+        run: npm test

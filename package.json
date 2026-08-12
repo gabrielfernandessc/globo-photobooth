@@ -19,7 +19,7 @@
   },
   "description": "Totem de Foto Globo para Eventos Corporativos — celular como câmera, preview em outra tela",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "start": "node server.js",
