@@ -70,6 +70,14 @@ class BoothClient(private val http: OkHttpClient = defaultHttp()) {
         private set
     var onPresenceChange: ((Boolean) -> Unit)? = null
 
+    /**
+     * Prova de sessão assinada pelo servidor. É ela, e não o código, que
+     * autoriza o upload: assim a foto sobe mesmo quando a função que
+     * atende o pedido nunca viu esta sessão.
+     */
+    var sessionToken: String? = null
+        private set
+
     /** Abre uma sessão sem depender de nenhuma tela — o app é o principal. */
     fun createSession(rawUrl: String): Result<String> = runCatching {
         val normalized = normalizeBaseUrl(rawUrl)
@@ -81,7 +89,9 @@ class BoothClient(private val http: OkHttpClient = defaultHttp()) {
         http.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) error("Servidor respondeu HTTP ${response.code}: $text")
-            JSONObject(text).optString("code").ifEmpty { error("Servidor não devolveu código") }
+            val json = JSONObject(text)
+            sessionToken = json.optString("token").ifEmpty { null }
+            json.optString("code").ifEmpty { error("Servidor não devolveu código") }
         }
     }
 

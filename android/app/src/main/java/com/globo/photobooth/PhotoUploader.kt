@@ -78,7 +78,9 @@ class PhotoUploader(
             put("payload", JSONObject().apply {
                 put("pathname", pathname)
                 put("callbackUrl", "${client.baseUrl}/api/blob/upload")
-                put("clientPayload", code)
+                // O token assinado dispensa consulta a estado compartilhado:
+                // é o que faz a foto subir numa Vercel sem Redis.
+                put("clientPayload", client.sessionToken ?: code)
                 put("multipart", false)
             })
         }
