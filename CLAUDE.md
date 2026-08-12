@@ -70,8 +70,22 @@ npm start          # subir o servidor local
 npm test           # suíte completa, inclui teste de sistema real
 ```
 
-No Windows, o operador usa `start-totem.cmd` (duplo clique) e
-`scripts/Stop-PhotoBooth.ps1`.
+O operador não usa terminal. Ele abre o totem por duplo clique:
+
+```bash
+bash scripts/build-mac-app.sh    # monta "Globo Photo Booth.app"
+```
+
+O bundle é gerado, não versionado. O lançador dentro dele resolve o
+`node` explicitamente — um app aberto pelo Finder recebe só
+`/usr/bin:/bin:/usr/sbin:/sbin`, e é por isso que tanto lançador
+"funciona no terminal e não funciona no duplo clique". Ele também
+derruba o `PTPCamera` (que disputa a câmera com o gphoto2), impede a
+máquina de dormir e espera `/api/health` responder antes de abrir o
+telão. Encerrar pelo Dock manda SIGTERM e o servidor fecha o WAL direito.
+
+`PHOTOBOOTH_SEM_TELAO=1` sobe o servidor sem tomar a tela — é o modo de
+diagnóstico. No Windows existe o equivalente em `start-totem.cmd`.
 
 ## Testes
 

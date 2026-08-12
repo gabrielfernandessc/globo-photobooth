@@ -9,6 +9,11 @@ certs/
 # Fotos do evento
 public/uploads/
 
+# O .app é montado por scripts/build-mac-app.sh. Versionar um bundle
+# seria versionar uma pasta que ninguém revisa.
+Globo Photo Booth.app/
+logs/
+
 # Banco do evento: fotos, fila de publicação e configurações
 data/
 *.sqlite
