@@ -40,10 +40,20 @@ jobs:
 
       # Sem assinatura estável, cada build sai com uma chave diferente e
       # o Android recusa a atualização por conflito de pacote.
+      - name: Restaurar chave de assinatura
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::warning::Sem ANDROID_KEYSTORE_B64 — o APK sairá com chave de debug efêmera e não atualizará sobre a instalação existente."
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > android/release.p12
+          echo "chave restaurada ($(stat -c%s android/release.p12) bytes)"
+
       - name: Compilar APK de debug
         working-directory: android
         env:
-          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: gradle assembleDebug --no-daemon --stacktrace
 

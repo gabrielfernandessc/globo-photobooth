@@ -33,13 +33,11 @@ android {
      * repositório. Sem ela — build local, por exemplo — o Gradle cai na
      * chave de debug de sempre.
      */
-    val keystoreB64: String? = System.getenv("ANDROID_KEYSTORE_B64")
+    // O arquivo é escrito pelo workflow a partir do secret. Decodificar
+    // aqui esbarrava na extensão "java" do Gradle, que sombreia
+    // java.util dentro deste bloco.
     val keystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
     val keystoreFile = rootProject.file("release.p12")
-
-    if (!keystoreB64.isNullOrBlank() && !keystorePassword.isNullOrBlank()) {
-        keystoreFile.writeBytes(java.util.Base64.getDecoder().decode(keystoreB64.trim()))
-    }
 
     signingConfigs {
         create("stable") {
