@@ -1,5 +1,6 @@
 package com.globo.photobooth.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -43,6 +44,20 @@ fun BoothApp(
     // perguntar. A tela de configuração só aparece se isso falhar.
     LaunchedEffect(hasCameraPermission) {
         if (hasCameraPermission) viewModel.autoStart()
+    }
+
+    /* O voltar do aparelho fechava o app de qualquer tela. Aqui ele
+       navega para trás: fecha o aviso de atualização, sai do resultado,
+       cancela uma conexão travada — e só encerra quando não há mais
+       nada de onde voltar. */
+    BackHandler(enabled = state.update != null) { viewModel.dismissUpdate() }
+
+    BackHandler(enabled = state.update == null && state.stage == BoothViewModel.Stage.RESULT) {
+        viewModel.backToPreview()
+    }
+
+    BackHandler(enabled = state.update == null && state.stage == BoothViewModel.Stage.CONNECTING) {
+        viewModel.cancelConnecting()
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Fundo) {
@@ -216,6 +231,11 @@ private fun SetupScreen(viewModel: BoothViewModel, state: BoothViewModel.UiState
 private fun BoothScreen(viewModel: BoothViewModel, state: BoothViewModel.UiState) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var panel by remember { mutableStateOf(Panel.NONE) }
+
+    // Painel aberto: voltar fecha o painel, não o app.
+    BackHandler(enabled = panel != Panel.NONE && state.stage != BoothViewModel.Stage.RESULT) {
+        panel = Panel.NONE
+    }
 
     Column(Modifier.fillMaxSize()) {
 

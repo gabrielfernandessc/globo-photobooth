@@ -82,6 +82,7 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
 
     private var countdownJob: Job? = null
     private var resultJob: Job? = null
+    private var connectJob: Job? = null
     private var previewView: PreviewView? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var relayEnabled = false
@@ -130,7 +131,8 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("serverUrl", serverUrl).apply()
         _state.update { it.copy(stage = Stage.CONNECTING, error = null, serverUrl = serverUrl) }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        connectJob?.cancel()
+        connectJob = viewModelScope.launch(Dispatchers.IO) {
             client.fetchConfig(serverUrl)
                 .onSuccess { cfg ->
                     // Avisa antes da primeira foto, não depois de falhar.
@@ -141,6 +143,19 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(code = code) }
                     client.connect(code)
                     loadDisplayLink(code)
+
+                    // Sem isto, um socket que nunca abre deixa a tela em
+                    // "Conectando…" para sempre, sem dizer o que houve.
+                    delay(CONNECT_TIMEOUT_MS)
+                    if (_state.value.stage == Stage.CONNECTING) {
+                        _state.update {
+                            it.copy(
+                                stage = Stage.SETUP,
+                                error = "O servidor respondeu, mas a conexão em tempo real não abriu. " +
+                                    "Verifique se o deploy está atualizado (precisa ter POST /api/session).",
+                            )
+                        }
+                    }
                 }
                 .onFailure { e ->
                     _state.update {
@@ -148,6 +163,14 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
         }
+    }
+
+    /** Volta para a tela de endereço sem derrubar a sessão à toa. */
+    fun cancelConnecting() {
+        connectJob?.cancel()
+        connectJob = null
+        client.disconnect()
+        _state.update { it.copy(stage = Stage.SETUP, connected = false) }
     }
 
     /** Link do telão opcional: quem quiser um monitor abre este endereço. */
@@ -472,5 +495,6 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val RESULT_MS = 15_000L
+        private const val CONNECT_TIMEOUT_MS = 12_000L
     }
 }
