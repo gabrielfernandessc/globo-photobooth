@@ -76,6 +76,43 @@ function jpegFalso(marca = 0) {
   ]);
 }
 
+/* ── --get-config / --set-config ──
+   O formato de saída é o do gphoto2 real: bloco de propriedades com
+   uma linha "Current:". Só alguns ajustes existem, de propósito — um
+   corpo que não expõe determinada chave é o caso normal, e o bridge
+   precisa seguir adiante em vez de abortar o perfil inteiro. */
+const CONFIG = {
+  imagesize: 'Large',
+  imagequality: 'Extra Fine',
+  aspectratio: '3:2',
+  iso: '800',
+  'f-number': 'f/8',
+  shutterspeed: '1/125',
+  whitebalance: 'Daylight',
+};
+
+if (tem('--get-config')) {
+  const chave = valor('--get-config');
+  if (!(chave in CONFIG)) {
+    process.stderr.write(`*** Error ***\nUnknown config name ${chave}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(
+    `Label: ${chave}\nReadonly: 0\nType: RADIO\nCurrent: ${CONFIG[chave]}\nEND\n`
+  );
+  process.exit(0);
+}
+
+if (tem('--set-config')) {
+  const par = valor('--set-config') || '';
+  const chave = par.split('=')[0];
+  if (!(chave in CONFIG)) {
+    process.stderr.write(`*** Error ***\nUnknown config name ${chave}\n`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 /* ── --capture-movie --stdout ── */
 if (tem('--capture-movie')) {
   const fps = Number(process.env.FAKE_FPS || 20);

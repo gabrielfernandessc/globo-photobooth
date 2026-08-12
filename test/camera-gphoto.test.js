@@ -292,3 +292,48 @@ test('câmera no cabo em modo errado é diagnosticada como tal', async () => {
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });
+
+test('o perfil da câmera é lido e reaplicado', async () => {
+  // A Sony perde a configuração sozinha: um erro de cartão que peça
+  // recuperação reseta tudo. Sem perfil guardado, o operador
+  // reconfigura de cabeça no meio do evento.
+  const a = ambiente();
+  try {
+    await a.camera.start();
+
+    const perfil = await a.camera.lerPerfil();
+    assert.equal(perfil.imagesize, 'Large');
+    assert.equal(perfil.aspectratio, '3:2');
+    assert.equal(perfil.iso, '800');
+
+    // Ajustes que o corpo não expõe simplesmente não entram — não podem
+    // abortar a leitura dos demais.
+    assert.ok(!('capturetarget' in perfil), 'ajuste inexistente não deveria virar chave');
+
+    const { aplicados, recusados } = await a.camera.aplicarPerfil(perfil);
+    assert.equal(aplicados.length, Object.keys(perfil).length);
+    assert.deepEqual(recusados, []);
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('um ajuste recusado não impede os outros de voltarem', async () => {
+  // Nomes de ajuste mudam entre firmwares. Restaurar seis de oito e
+  // dizer quais faltaram é melhor que não restaurar nada.
+  const a = ambiente();
+  try {
+    await a.camera.start();
+
+    const { aplicados, recusados } = await a.camera.aplicarPerfil({
+      iso: '400',
+      ajusteQueNaoExiste: 'x',
+      aspectratio: '3:2',
+    });
+
+    assert.deepEqual(aplicados.sort(), ['aspectratio', 'iso']);
+    assert.deepEqual(recusados, ['ajusteQueNaoExiste']);
+  } finally {
+    await a.limpar();
+  }
+});
