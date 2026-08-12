@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -19,6 +20,17 @@ import com.globo.photobooth.ui.GloboTheme
 class MainActivity : ComponentActivity() {
 
     private var hasCameraPermission by mutableStateOf(false)
+    private var viewModel: BoothViewModel? = null
+
+    /**
+     * Alternar de app derruba o vínculo do CameraX e, com frequência, o
+     * socket. Sem reatar os dois aqui, voltar ao Fotoboarding deixava a
+     * tela preta e a sessão muda.
+     */
+    override fun onResume() {
+        super.onResume()
+        viewModel?.onResume()
+    }
 
     private val requestPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -41,6 +53,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             GloboTheme {
                 val vm: BoothViewModel = viewModel()
+                LaunchedEffect(vm) { viewModel = vm }
                 BoothApp(
                     viewModel = vm,
                     hasCameraPermission = hasCameraPermission,

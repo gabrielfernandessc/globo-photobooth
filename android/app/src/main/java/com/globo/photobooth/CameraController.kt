@@ -114,6 +114,11 @@ class CameraController(private val context: Context) {
 
     private fun buildImageCapture(mode: CaptureMode): ImageCapture {
         val builder = ImageCapture.Builder()
+            // O CameraX comprime a 95 por padrão no modo qualidade. Como
+            // esta é a foto que o convidado leva, e o servidor ainda vai
+            // recodificar uma vez para aplicar a moldura, o JPEG sai
+            // daqui no máximo — não há por que perder duas vezes.
+            .setJpegQuality(100)
 
         if (mode == CaptureMode.ZSL) {
             builder.setCaptureMode(ImageCapture.CAPTURE_MODE_ZERO_SHUTTER_LAG)

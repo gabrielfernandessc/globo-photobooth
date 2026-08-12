@@ -22,12 +22,34 @@ class PhotoUploader(
     private val http: OkHttpClient = BoothClient.defaultHttp(),
 ) {
 
-    data class Result(val finalWidth: Int, val finalHeight: Int, val finalBytes: Long, val pageUrl: String)
+    data class Result(
+        val finalWidth: Int,
+        val finalHeight: Int,
+        val finalBytes: Long,
+        val pageUrl: String,
+        /** Versão composta (já com a moldura) para mostrar na tela do app. */
+        val imageUrl: String,
+    )
 
     fun upload(jpeg: ByteArray, aspectRatio: String, mirror: Boolean): Result {
         val config = client.config ?: error("Configuração do servidor não carregada")
-        return if (config.directUpload) uploadViaBlob(jpeg, aspectRatio, mirror)
-        else uploadMultipart(jpeg, aspectRatio, mirror)
+        if (!config.directUpload) return uploadMultipart(jpeg, aspectRatio, mirror)
+
+        return try {
+            uploadViaBlob(jpeg, aspectRatio, mirror)
+        } catch (e: Throwable) {
+            // O caminho do Blob depende de a sessão existir na instância
+            // que atende o pedido de token. Se falhar e a foto couber no
+            // limite do servidor, tenta o caminho simples antes de
+            // desistir — melhor uma foto entregue que um erro na fila.
+            Log.w(TAG, "upload direto falhou, tentando multipart", e)
+            if (jpeg.size > MAX_FALLBACK_BYTES) {
+                throw IllegalStateException(
+                    "${e.message} · foto de ${jpeg.size / 1024 / 1024} MB não cabe no envio alternativo"
+                )
+            }
+            uploadMultipart(jpeg, aspectRatio, mirror)
+        }
     }
 
     private fun uploadMultipart(jpeg: ByteArray, aspectRatio: String, mirror: Boolean): Result {
@@ -119,6 +141,7 @@ class PhotoUploader(
             finalHeight = meta?.optInt("finalHeight") ?: 0,
             finalBytes = meta?.optLong("finalBytes") ?: 0L,
             pageUrl = data.optString("pageUrl"),
+            imageUrl = data.optString("imageUrl"),
         )
     }
 
@@ -126,6 +149,8 @@ class PhotoUploader(
         private const val TAG = "PhotoUploader"
         private const val BLOB_ENDPOINT = "https://blob.vercel-storage.com"
         private const val BLOB_API_VERSION = "7"
+        // O corpo de uma função na Vercel para em 4,5 MB.
+        private const val MAX_FALLBACK_BYTES = 4 * 1024 * 1024
         private val JPEG = "image/jpeg".toMediaType()
         private val JSON = "application/json".toMediaType()
     }
