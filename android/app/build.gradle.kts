@@ -12,8 +12,12 @@ android {
         applicationId = "com.globo.photobooth"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
+
+        // O servidor padrão. O app abre direto nele, sem perguntar nada;
+        // trocar só é preciso quando o evento roda com servidor local.
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://globo-photobooth.vercel.app\"")
     }
 
     buildTypes {
@@ -38,6 +42,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

@@ -1,13 +1,17 @@
 name: APK Android
 
 # Compila o app no CI porque a máquina de desenvolvimento não tem JDK
-# nem Android SDK — e nem precisa. O APK sai como artefato para sideload.
+# nem Android SDK — e nem precisa. Além do artefato, publica uma release
+# para o próprio app se atualizar sozinho, sem sideload manual.
 on:
   push:
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -33,10 +37,46 @@ jobs:
         working-directory: android
         run: gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Publicar APK
+      # O versionCode sai do build.gradle e vira a tag: é por ele que o
+      # app decide se a release publicada é mais nova que a instalada.
+      - name: Ler versão
+        id: version
+        working-directory: android
+        run: |
+          CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts | head -1)
+          NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "APK versionCode=$CODE versionName=$NAME"
+
+      - name: Renomear APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk fotoboarding.apk
+
+      - name: Publicar APK como artefato
         uses: actions/upload-artifact@v4
         with:
           name: fotoboarding-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: fotoboarding.apk
           if-no-files-found: error
           retention-days: 30
+
+      # A release é a fonte do auto-update. Uma tag por versionCode, e o
+      # build mais recente sempre sobrescreve — assim o app pega o APK
+      # atual daquela versão sem exigir bump a cada ajuste.
+      - name: Publicar release
+        if: github.ref_name == 'main' || startsWith(github.ref_name, 'feat/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}"
+          NOTES="Build de ${{ github.sha }} em $(date -u +%Y-%m-%d\ %H:%M) UTC"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" fotoboarding.apk --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" fotoboarding.apk \
+              --title "Fotoboarding ${{ steps.version.outputs.name }}" \
+              --notes "$NOTES" \
+              --latest
+          fi

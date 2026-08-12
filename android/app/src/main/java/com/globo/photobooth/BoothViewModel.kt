@@ -59,15 +59,26 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
         val resultPageUrl: String = "",
         val displayLink: String = "",
         val displayQr: Bitmap? = null,
+        // Atualização do próprio app
+        val update: AppUpdater.Release? = null,
+        val updateProgress: Float = -1f,
+        val appVersion: String = BuildConfig.VERSION_NAME,
     )
 
-    private val _state = MutableStateFlow(UiState())
+    private val prefs = app.getSharedPreferences("booth", android.content.Context.MODE_PRIVATE)
+
+    /** O servidor padrão vem do build; trocar só é preciso no evento com servidor local. */
+    private val savedUrl: String
+        get() = prefs.getString("serverUrl", null) ?: BuildConfig.DEFAULT_SERVER_URL
+
+    private val _state = MutableStateFlow(UiState(serverUrl = savedUrl))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     val camera = CameraController(app.applicationContext)
     private val client = BoothClient()
     private val uploader = PhotoUploader(client)
     private val http = BoothClient.defaultHttp()
+    private val updater = AppUpdater(app.applicationContext)
 
     private var countdownJob: Job? = null
     private var resultJob: Job? = null
@@ -104,11 +115,19 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
        INÍCIO — o app abre a sessão, não entra numa de fora
        ═══════════════════════════════════════════════════════ */
 
+    /** Conecta sozinho no servidor conhecido: abrir o app já é começar. */
+    fun autoStart() {
+        if (_state.value.stage != Stage.SETUP) return
+        start(savedUrl)
+        checkForUpdate(savedUrl)
+    }
+
     fun start(serverUrl: String) {
         if (serverUrl.isBlank()) {
             _state.update { it.copy(error = "Informe o endereço do servidor") }
             return
         }
+        prefs.edit().putString("serverUrl", serverUrl).apply()
         _state.update { it.copy(stage = Stage.CONNECTING, error = null, serverUrl = serverUrl) }
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -143,6 +162,38 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
         client.disconnect()
         _state.update { it.copy(stage = Stage.SETUP, connected = false, code = "") }
     }
+
+    /* ═══════════════════════════════════════════════════════
+       ATUALIZAÇÃO DO APP — sem loja, sem sideload manual
+       ═══════════════════════════════════════════════════════ */
+
+    private fun checkForUpdate(serverUrl: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val release = updater.check(serverUrl.trimEnd('/').let {
+                if (it.startsWith("http")) it else "http://$it"
+            })
+            if (release != null) _state.update { it.copy(update = release) }
+        }
+    }
+
+    fun installUpdate() {
+        val release = _state.value.update ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                _state.update { it.copy(updateProgress = 0f) }
+                val apk = updater.download(release) { progress ->
+                    _state.update { it.copy(updateProgress = progress) }
+                }
+                // O Android ainda pede confirmação — não dá para instalar
+                // silenciosamente, e nem seria desejável.
+                updater.install(apk)
+            }.onFailure { e ->
+                _state.update { it.copy(updateProgress = -1f, error = "Falha ao atualizar: ${e.message}") }
+            }
+        }
+    }
+
+    fun dismissUpdate() = _state.update { it.copy(update = null, updateProgress = -1f) }
 
     /* ═══════════════════════════════════════════════════════
        CÂMERA

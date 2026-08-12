@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,12 +39,86 @@ fun BoothApp(
 ) {
     val state by viewModel.state.collectAsState()
 
+    // Abrir o app já é começar: o servidor é conhecido, não há o que
+    // perguntar. A tela de configuração só aparece se isso falhar.
+    LaunchedEffect(hasCameraPermission) {
+        if (hasCameraPermission) viewModel.autoStart()
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = Fundo) {
-        when {
-            !hasCameraPermission -> PermissionScreen(onRequestPermission)
-            state.stage == BoothViewModel.Stage.SETUP ||
-                state.stage == BoothViewModel.Stage.CONNECTING -> SetupScreen(viewModel, state)
-            else -> BoothScreen(viewModel, state)
+        Box(Modifier.fillMaxSize()) {
+            when {
+                !hasCameraPermission -> PermissionScreen(onRequestPermission)
+                state.stage == BoothViewModel.Stage.SETUP ||
+                    state.stage == BoothViewModel.Stage.CONNECTING -> SetupScreen(viewModel, state)
+                else -> BoothScreen(viewModel, state)
+            }
+
+            state.update?.let { release ->
+                UpdateBanner(
+                    release = release,
+                    progress = state.updateProgress,
+                    onInstall = { viewModel.installUpdate() },
+                    onDismiss = { viewModel.dismissUpdate() },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ATUALIZAÇÃO — o app se atualiza sozinho, sem loja
+   ═══════════════════════════════════════════════════════════ */
+
+@Composable
+private fun UpdateBanner(
+    release: com.globo.photobooth.AppUpdater.Release,
+    progress: Float,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val baixando = progress >= 0f
+
+    Surface(
+        modifier = modifier.fillMaxWidth().padding(12.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = Superficie2,
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Nova versão disponível — ${release.versionName}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = Color.White,
+            )
+            if (release.notes.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(release.notes, fontSize = 12.sp, color = Color.White.copy(alpha = .6f), maxLines = 2)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            if (baixando) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = GloboAzul,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Baixando ${(progress * 100).toInt()}%…",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = .6f),
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onInstall, modifier = Modifier.weight(1f)) { Text("Atualizar") }
+                    OutlinedButton(onClick = onDismiss) { Text("Depois") }
+                }
+            }
         }
     }
 }
@@ -88,42 +163,48 @@ private fun SetupScreen(viewModel: BoothViewModel, state: BoothViewModel.UiState
         Text("Fotoboarding", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = GloboAzul)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Este aparelho é o totem.\nA sessão é criada aqui.",
+            if (connecting) "Conectando…" else "Este aparelho é o totem.",
             color = Color.White.copy(alpha = .65f),
             textAlign = TextAlign.Center,
             lineHeight = 20.sp,
         )
         Spacer(Modifier.height(36.dp))
 
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Endereço do servidor") },
-            supportingText = { Text("O IP que aparece no console, ou a URL da Vercel") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (connecting) {
+            CircularProgressIndicator(color = GloboAzul)
+        } else {
+            // Só aparece quando a conexão automática falha, ou quando o
+            // operador encerra a sessão de propósito.
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("Endereço do servidor") },
+                supportingText = { Text("Padrão: o servidor da Vercel. Troque só para usar um servidor local.") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+            )
 
-        state.error?.let {
-            Spacer(Modifier.height(16.dp))
-            Text(it, color = GloboVermelho, textAlign = TextAlign.Center, fontSize = 13.sp)
-        }
+            state.error?.let {
+                Spacer(Modifier.height(16.dp))
+                Text(it, color = GloboVermelho, textAlign = TextAlign.Center, fontSize = 13.sp)
+            }
 
-        Spacer(Modifier.height(28.dp))
-        Button(
-            onClick = { viewModel.start(url) },
-            enabled = !connecting,
-            modifier = Modifier.fillMaxWidth().height(54.dp),
-        ) {
-            if (connecting) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(12.dp))
-                Text("Abrindo a sessão…")
-            } else {
-                Text("Começar", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(28.dp))
+            Button(
+                onClick = { viewModel.start(url) },
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+            ) {
+                Text("Conectar", fontWeight = FontWeight.Bold)
             }
         }
+
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "versão ${state.appVersion}",
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = .35f),
+        )
     }
 }
 
