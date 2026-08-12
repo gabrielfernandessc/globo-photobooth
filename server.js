@@ -58,8 +58,32 @@ function loadOrCreateCert() {
   return { key: pems.private, cert: pems.cert };
 }
 
+/**
+ * Porta ocupada é o erro mais comum de quem opera, e o Node responde a
+ * ele com um dump de stack — ilegível às 22h de um sábado. Pior: quando
+ * um totem antigo continua vivo na porta, tudo parece funcionar e as
+ * fotos vão para o banco errado, que foi exatamente o que aconteceu aqui.
+ */
+function explicaFalhaDeBoot(err, porta, rotulo) {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n   A porta ${porta} (${rotulo}) já está ocupada.`);
+    console.error('   Provavelmente há outro totem rodando. Encerre-o antes:');
+    console.error(`     macOS/Linux   lsof -ti :${porta} | xargs kill`);
+    console.error('     Windows       scripts\\Stop-PhotoBooth.ps1');
+    console.error(`   Ou use outra porta:  PORT=3001 npm start\n`);
+  } else if (err.code === 'EACCES') {
+    console.error(`\n   Sem permissão para usar a porta ${porta}.`);
+    console.error('   Portas abaixo de 1024 exigem privilégio; use PORT=3000 ou maior.\n');
+  } else {
+    console.error(`\n   Falha ao abrir a porta ${porta} (${rotulo}): ${err.message}\n`);
+  }
+  process.exit(1);
+}
+
 async function main() {
   const { app, server, io } = await createApp();
+
+  server.on('error', err => explicaFalhaDeBoot(err, config.port, 'HTTP'));
 
   server.listen(config.port, () => {
     const lan = lanAddresses();
@@ -82,6 +106,12 @@ async function main() {
 
     const secure = https.createServer(creds, app);
     io.attach(secure, { path: config.socketPath });
+    // HTTPS ocupado não derruba o totem: o telão continua no HTTP. Só o
+    // celular-câmera fica indisponível, e o operador precisa saber disso.
+    secure.on('error', err => {
+      console.error(`\n   HTTPS indisponível na porta ${config.httpsPort}: ${err.message}`);
+      console.error('   O telão segue funcionando, mas o celular não vai liberar a câmera.\n');
+    });
     secure.listen(config.httpsPort, () => {
       console.log(`\n   HTTPS  https://localhost:${config.httpsPort}`);
       lan.forEach(ip => console.log(`          https://${ip}:${config.httpsPort}   ← use esta no celular`));
