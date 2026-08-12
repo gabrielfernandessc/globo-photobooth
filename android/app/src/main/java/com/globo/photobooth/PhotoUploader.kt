@@ -37,20 +37,22 @@ class PhotoUploader(
 
         return try {
             uploadViaBlob(jpeg, aspectRatio, mirror)
-        } catch (e: Throwable) {
-            // O caminho do Blob depende de a sessão existir na instância
-            // que atende o pedido de token. Se falhar e a foto couber no
-            // limite do servidor, tenta o caminho simples antes de
-            // desistir — melhor uma foto entregue que um erro na fila.
-            Log.w(TAG, "upload direto falhou, tentando multipart", e)
+        } catch (e: TransportException) {
+            // Só vale repetir quando a falha foi em ENTREGAR o arquivo.
+            // Se o servidor já recebeu e falhou ao processar, reenviar
+            // por outro caminho produz exatamente o mesmo erro.
+            Log.w(TAG, "entrega pelo Blob falhou, tentando multipart", e)
             if (jpeg.size > MAX_FALLBACK_BYTES) {
                 throw IllegalStateException(
-                    "${e.message} · foto de ${jpeg.size / 1024 / 1024} MB não cabe no envio alternativo"
+                    "${e.message} · foto de ${jpeg.size / 1024 / 1024} MB excede o limite do envio alternativo"
                 )
             }
             uploadMultipart(jpeg, aspectRatio, mirror)
         }
     }
+
+    /** Falha em entregar o arquivo — ao contrário de falha em processá-lo. */
+    private class TransportException(message: String) : Exception(message)
 
     private fun uploadMultipart(jpeg: ByteArray, aspectRatio: String, mirror: Boolean): Result {
         val code = client.sessionCode ?: error("Sem sessão")
@@ -91,8 +93,8 @@ class PhotoUploader(
 
         val clientToken = http.newCall(tokenRequest).execute().use { response ->
             val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("Token negado (HTTP ${response.code}): $text")
-            JSONObject(text).optString("clientToken").ifEmpty { error("Servidor não devolveu token") }
+            if (!response.isSuccessful) throw TransportException("Token negado (HTTP ${response.code}): ${briefError(text)}")
+            JSONObject(text).optString("clientToken").ifEmpty { throw TransportException("Servidor não devolveu token") }
         }
 
         // 2. Os bytes vão do aparelho direto para o Blob, sem passar pela função.
@@ -106,8 +108,8 @@ class PhotoUploader(
 
         val blobUrl = http.newCall(putRequest).execute().use { response ->
             val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("Upload para o Blob falhou (HTTP ${response.code}): $text")
-            JSONObject(text).optString("url").ifEmpty { error("Blob não devolveu url") }
+            if (!response.isSuccessful) throw TransportException("Blob recusou (HTTP ${response.code}): ${briefError(text)}")
+            JSONObject(text).optString("url").ifEmpty { throw TransportException("Blob não devolveu url") }
         }
 
         // 3. O servidor baixa do Blob, compõe com a moldura e publica.
@@ -125,6 +127,14 @@ class PhotoUploader(
 
         return http.newCall(finalizeRequest).execute().use { parseResult(it.body?.string(), it.code) }
     }
+
+    /** Servidor pode responder HTML numa falha; corta para caber na tela. */
+    private fun briefError(text: String): String =
+        runCatching { JSONObject(text).optString("error").ifEmpty { text } }
+            .getOrDefault(text)
+            .replace(Regex("<[^>]*>"), " ")
+            .trim()
+            .take(140)
 
     private fun parseResult(text: String?, status: Int): Result {
         val json = runCatching { JSONObject(text.orEmpty()) }.getOrNull()
