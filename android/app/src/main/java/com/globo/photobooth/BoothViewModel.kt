@@ -59,6 +59,7 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
         val resultPageUrl: String = "",
         val displayLink: String = "",
         val displayQr: Bitmap? = null,
+        val sharedStateWarning: String? = null,
         // Atualização do próprio app
         val update: AppUpdater.Release? = null,
         val updateProgress: Float = -1f,
@@ -135,8 +136,10 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
         connectJob = viewModelScope.launch(Dispatchers.IO) {
             client.fetchConfig(serverUrl)
                 .onSuccess { cfg ->
-                    // Avisa antes da primeira foto, não depois de falhar.
-                    cfg.misconfigured?.let { warning -> _state.update { it.copy(error = warning) } }
+                    // Vai para o painel do telão, que é onde importa —
+                    // como erro na abertura, alarmava sobre algo que não
+                    // afeta tirar foto.
+                    _state.update { it.copy(sharedStateWarning = cfg.sharedStateWarning) }
                 }
                 .mapCatching { client.createSession(serverUrl).getOrThrow() }
                 .onSuccess { code ->

@@ -12,8 +12,8 @@ android {
         applicationId = "com.globo.photobooth"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.1"
+        versionCode = 4
+        versionName = "2.2"
 
         // O servidor padrão. O app abre direto nele, sem perguntar nada;
         // trocar só é preciso quando o evento roda com servidor local.

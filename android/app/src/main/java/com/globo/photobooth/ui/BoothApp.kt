@@ -541,6 +541,19 @@ private fun ShareSection(state: BoothViewModel.UiState) {
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth(),
     )
+
+    // Só aqui: é o telão que sofre sem estado compartilhado, não a foto.
+    state.sharedStateWarning?.let { warning ->
+        Spacer(Modifier.height(14.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(GloboAmarelo.copy(alpha = .12f), RoundedCornerShape(10.dp))
+                .padding(12.dp)
+        ) {
+            Text(warning, fontSize = 11.sp, color = GloboAmarelo, lineHeight = 16.sp)
+        }
+    }
     Spacer(Modifier.height(6.dp))
     Text(
         "Código da sessão: ${state.code}",

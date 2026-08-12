@@ -31,15 +31,22 @@ class BoothClient(private val http: OkHttpClient = defaultHttp()) {
         val stateDriver: String,
     ) {
         /**
-         * Serverless sem estado compartilhado: a sessão criada numa
-         * instância não existe na próxima, e o upload é recusado com
-         * "sessão não encontrada". Detectar isso na largada evita
-         * descobrir no meio do evento.
+         * Sem Redis, instâncias diferentes não compartilham estado.
+         *
+         * Isso NÃO impede tirar e publicar fotos: a autorização do
+         * upload usa token assinado e a página do QR reconstrói os
+         * caminhos pelo id, ambos sem consultar estado.
+         *
+         * O que degrada é o que depende de dois aparelhos na mesma
+         * sessão — telão e moldura —, porque aí as conexões precisam se
+         * enxergar entre instâncias. Por isso o aviso aparece no painel
+         * do telão, e não como erro na abertura.
          */
-        val misconfigured: String?
+        val sharedStateWarning: String?
             get() = if (platform == "vercel" && stateDriver != "redis") {
-                "O servidor está na Vercel sem Redis conectado. As fotos vão falhar ao enviar. " +
-                    "Conecte um Redis ao projeto (Storage → Marketplace) e confira em /api/health."
+                "Sem Redis conectado, o telão e a moldura podem não funcionar de forma consistente — " +
+                    "as conexões caem em instâncias diferentes do servidor. Tirar e publicar fotos " +
+                    "pelo app não é afetado."
             } else null
     }
 
