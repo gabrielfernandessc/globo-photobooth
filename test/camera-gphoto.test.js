@@ -41,6 +41,7 @@ function ambiente(env = {}) {
     preview,
     sessionCode: 'AB3D',
     binario: fake.bin,
+    sondarUsb: async () => false,
     pastaTemp: temp,
   });
 
@@ -118,6 +119,7 @@ test('sem câmera conectada o erro é claro e o estado é falha', async () => {
     const s = a.camera.status();
     assert.equal(s.estado, ESTADO.FALHA);
     assert.match(s.erro, /nenhuma câmera/i);
+    assert.match(s.erro, /cabo/i, 'a mensagem precisa dizer o que conferir');
     assert.equal(s.transmitindo, false);
 
     await assert.rejects(() => a.camera.capturar(), /Nenhuma câmera conectada/);
@@ -258,5 +260,35 @@ test('o status distingue "transmitindo agora" de "já transmitiu um dia"', async
     assert.equal(a.camera.status().transmitindo, false);
   } finally {
     await a.limpar();
+  }
+});
+
+test('câmera no cabo em modo errado é diagnosticada como tal', async () => {
+  // O sintoma é idêntico ao de cabo desconectado — gphoto2 não a vê —
+  // mas a solução é abrir um menu, não procurar um cabo. Um erro de
+  // cartão que peça recuperação reseta a Sony para Armaz. Massa, então
+  // isto acontece sozinho no meio de um evento.
+  const fake = prepararFake({ FAKE_SEM_CAMERA: 1 });
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-modo-'));
+  const camera = createGphotoCamera({
+    preview: createPreviewHub(),
+    sessionCode: 'AB3D',
+    binario: fake.bin,
+    // O sistema enxerga a câmera no USB, mas o gphoto2 não.
+    sondarUsb: async () => true,
+    pastaTemp: temp,
+  });
+
+  try {
+    assert.equal(await camera.start(), false);
+
+    const erro = camera.status().erro;
+    assert.match(erro, /modo de armazenamento/i);
+    assert.match(erro, /PC Remoto/i, 'a mensagem precisa dizer para onde mudar');
+    assert.doesNotMatch(erro, /nenhuma câmera/i, 'não pode mandar procurar um cabo que está no lugar');
+  } finally {
+    await camera.stop();
+    fake.limpar();
+    fs.rmSync(temp, { recursive: true, force: true });
   }
 });
