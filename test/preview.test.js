@@ -19,23 +19,28 @@ process.env.ENABLE_HTTPS = 'false';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const http = require('http');
 const sharp = require('sharp');
 
 const { createApp } = require('../lib/app');
 const { createPreviewHub, quadroMjpeg, FRONTEIRA } = require('../lib/preview');
 
 let server;
+let encerrar;
 let base;
 
 test.before(async () => {
   const criado = await createApp();
   server = criado.server;
+  encerrar = criado.shutdown;
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
 test.after(async () => {
-  await new Promise(resolve => server.close(resolve));
+  // shutdown() e não server.close(): um stream MJPEG aberto é uma
+  // resposta que nunca termina, e seguraria o encerramento para sempre.
+  await encerrar();
   fs.rmSync(UPLOADS, { recursive: true, force: true });
 });
 
@@ -139,44 +144,68 @@ test('o quadro multipart carrega a fronteira e o tamanho corretos', () => {
 
 /* ── Pelo HTTP, como o celular e o telão realmente falam ── */
 
+/**
+ * Cliente HTTP cru, e não fetch, de propósito.
+ *
+ * O fetch do Node bufferiza multipart/x-mixed-replace e só entrega o
+ * corpo quando a resposta termina — mas um stream MJPEG nunca termina,
+ * então nada chegaria e o teste travaria. Uma <img> do navegador lê
+ * incrementalmente, que é o que o http.get reproduz aqui.
+ */
+function abrirStream(url, { aoReceber, prazoMs = 5000 }) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, res => {
+      const pedacos = [];
+      const encerrar = () => {
+        req.destroy();
+        resolve({ status: res.statusCode, headers: res.headers, corpo: Buffer.concat(pedacos) });
+      };
+
+      res.on('data', d => {
+        pedacos.push(d);
+        if (aoReceber(Buffer.concat(pedacos))) encerrar();
+      });
+      res.on('error', encerrar);
+      setTimeout(encerrar, prazoMs);
+    });
+    req.on('error', reject);
+  });
+}
+
 test('o celular publica e o telão recebe pelo stream', async () => {
   const { code } = await novaSessao();
-
-  const stream = await fetch(`${base}/api/preview/${code}/stream`);
-  assert.equal(stream.status, 200);
-  assert.match(stream.headers.get('content-type'), /multipart\/x-mixed-replace/);
-  assert.match(stream.headers.get('cache-control'), /no-store/);
-
-  const leitor = stream.body.getReader();
-
-  // Espera o servidor registrar o assinante antes de publicar.
-  await new Promise(r => setTimeout(r, 100));
   const jpeg = await jpegDe(320, 240, '#e74c3c');
-  const resp = await publicar(code, jpeg, { 'x-frame-width': '320', 'x-frame-height': '240' });
 
+  // Abre o stream e, assim que o assinante estiver registrado, publica.
+  const streamPromise = abrirStream(
+    `${base}/api/preview/${code}/stream`,
+    { aoReceber: buf => buf.includes(Buffer.from([0xff, 0xd9])) }
+  );
+
+  await new Promise(r => setTimeout(r, 200));
+  const resp = await publicar(code, jpeg, { 'x-frame-width': '320', 'x-frame-height': '240' });
   assert.equal(resp.status, 200);
   assert.equal((await resp.json()).viewers, 1, 'o servidor deveria enxergar o telão conectado');
 
-  // Lê até fechar um quadro inteiro.
-  let buffer = Buffer.alloc(0);
-  const limite = Date.now() + 5000;
-  while (Date.now() < limite && buffer.length < jpeg.length) {
-    const { value, done } = await leitor.read();
-    if (done) break;
-    buffer = Buffer.concat([buffer, Buffer.from(value)]);
-  }
+  const { status, headers, corpo } = await streamPromise;
 
-  const texto = buffer.toString('latin1');
+  assert.equal(status, 200);
+  assert.match(headers['content-type'], /multipart\/x-mixed-replace/);
+  assert.match(headers['cache-control'], /no-store/);
+  assert.equal(headers['transfer-encoding'], 'chunked',
+    'sem chunked o cliente espera o fim do corpo, e um stream de preview não tem fim');
+
+  assert.ok(corpo.length > 0, 'o stream não entregou byte nenhum ao telão');
+
+  const texto = corpo.toString('latin1');
   assert.ok(texto.includes(`--${FRONTEIRA}`), 'o stream não trouxe a fronteira multipart');
   assert.ok(texto.includes(`Content-Length: ${jpeg.length}`));
 
   // E o JPEG que saiu é decodificável — não um pedaço truncado.
-  const inicio = buffer.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
-  const meta = await sharp(buffer.subarray(inicio, inicio + jpeg.length)).metadata();
+  const inicio = corpo.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
+  const meta = await sharp(corpo.subarray(inicio, inicio + jpeg.length)).metadata();
   assert.equal(meta.width, 320);
   assert.equal(meta.height, 240);
-
-  await leitor.cancel();
 });
 
 test('sem telão aberto o servidor avisa que não há plateia', async () => {

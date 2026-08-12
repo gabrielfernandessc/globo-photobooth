@@ -81,9 +81,30 @@ function explicaFalhaDeBoot(err, porta, rotulo) {
 }
 
 async function main() {
-  const { app, server, io } = await createApp();
+  const { app, server, io, shutdown } = await createApp();
 
   server.on('error', err => explicaFalhaDeBoot(err, config.port, 'HTTP'));
+
+  /* Ctrl+C e o encerramento do launcher precisam sair limpo: derrubar
+     os streams de preview, parar a fila e fechar o WAL do SQLite. Sem
+     isso o processo fica pendurado e o próximo boot acha que houve
+     queda de energia. */
+  let encerrando = false;
+  for (const sinal of ['SIGINT', 'SIGTERM']) {
+    process.on(sinal, async () => {
+      if (encerrando) return process.exit(1); // segundo Ctrl+C: força
+      encerrando = true;
+      console.log('\n   Encerrando o totem...');
+      try {
+        await shutdown();
+        console.log('   Fotos e fila preservadas em disco.\n');
+        process.exit(0);
+      } catch (err) {
+        console.error(`   Falha no encerramento: ${err.message}\n`);
+        process.exit(1);
+      }
+    });
+  }
 
   server.listen(config.port, () => {
     const lan = lanAddresses();
