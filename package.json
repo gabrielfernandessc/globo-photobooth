@@ -24,6 +24,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test": "node --test \"test/**/*.test.js\"",
     "build:vendor": "bun scripts/build-vendor.js",
     "share": "cloudflared tunnel --protocol http2 --url http://localhost:3000"
   }
