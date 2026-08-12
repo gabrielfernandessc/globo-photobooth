@@ -1,527 +1,102 @@
+/* ══════════════════════════════════════════════════════════
+   SERVER.JS — boot local (o PC do totem no evento)
+
+   Sobe HTTP e HTTPS. O HTTPS existe porque o Chrome do Android só
+   libera getUserMedia em contexto seguro: sem ele o celular não abre a
+   câmera na rede local. O certificado autoassinado é gerado no primeiro
+   boot, cobrindo o IP da máquina.
+
+   Na Vercel o entrypoint é api/server.js — este arquivo não roda lá.
+   ══════════════════════════════════════════════════════════ */
+
 require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const multer = require('multer');
+
 const fs = require('fs');
-const path = require('path');
-const sharp = require('sharp');
-const pkg = require('./package.json');
-
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 20e6 });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
 const os = require('os');
+const path = require('path');
+const https = require('https');
 
-const sessions = new Map();
-const APP_UPDATED_AT = '2026-05-13T23:03:56-03:00';
-const FINAL_JPEG_QUALITY = 100;
+const { config } = require('./lib/config');
+const { createApp } = require('./lib/app');
 
-const DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads', 'Globo-Photobooth');
-
-const PHOTO_DIRS = {
-  uploads: path.join(__dirname, 'public', 'uploads'),
-  original: path.join(__dirname, 'public', 'uploads', 'original'),
-  final: path.join(__dirname, 'public', 'uploads', 'final'),
-  downloads: DOWNLOADS_DIR,
-};
-const SONY_SLOT = 1;
-const ENABLE_SONY_SDK = process.env.ENABLE_SONY_SDK === 'true';
-
-app.use(express.static('public'));
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-app.use('/uploads', express.static(PHOTO_DIRS.uploads));
-
-function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code;
-  do {
-    code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  } while (sessions.has(code));
-  return code;
+function lanAddresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter(i => i && i.family === 'IPv4' && !i.internal)
+    .map(i => i.address);
 }
 
-function ensurePhotoDirs() {
-  Object.values(PHOTO_DIRS).forEach(dir => fs.mkdirSync(dir, { recursive: true }));
-}
+function loadOrCreateCert() {
+  const dir = path.join(__dirname, 'certs');
+  const keyPath = path.join(dir, 'key.pem');
+  const certPath = path.join(dir, 'cert.pem');
 
-function getBaseUrl(req) {
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  return `${protocol}://${req.get('host')}`;
-}
-
-function publicUploadUrl(req, folder, filename) {
-  return `${getBaseUrl(req)}/uploads/${folder}/${encodeURIComponent(filename)}`;
-}
-
-function buildPhotoUrls(req, finalFilename, originalFilename = null) {
-  return {
-    imageUrl: publicUploadUrl(req, 'final', finalFilename),
-    pageUrl: `${getBaseUrl(req)}/photo/${encodeURIComponent(finalFilename)}`,
-    downloadUrl: `${getBaseUrl(req)}/download/${encodeURIComponent(finalFilename)}`,
-    originalUrl: originalFilename ? publicUploadUrl(req, 'original', originalFilename) : null,
-  };
-}
-
-function getSessionFrame(code, aspectRatio) {
-  const session = sessions.get(code);
-  if (!session) return null;
-  const key = aspectRatio === '4:3' ? 'frame4x3' : 'frame3x4';
-  const frame = session[key];
-  if (!frame?.data) return null;
-  return Buffer.from(frame.data, 'base64');
-}
-
-function decodeDataImage(image) {
-  const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
-  return Buffer.from(base64Data, 'base64');
-}
-
-function safeBasename(value, fallback) {
-  return path.basename(value || fallback).replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-function fileKey(file) {
-  const contentId = file.content_id ?? file.contentId;
-  const fileId = file.file_id ?? file.fileId;
-  return `${contentId}:${fileId}`;
-}
-
-function getFileIds(file) {
-  return {
-    contentId: file.content_id ?? file.contentId,
-    fileId: file.file_id ?? file.fileId ?? 0,
-  };
-}
-
-function isLikelyJpeg(file) {
-  return /\.(jpe?g)$/i.test(file.file_path || file.name || '');
-}
-
-function fileTimestamp(file) {
-  const parts = [
-    file.creation_year,
-    file.creation_month,
-    file.creation_day,
-    file.creation_hour,
-    file.creation_minute,
-    file.creation_second,
-  ];
-  if (parts.some(v => v === undefined || v === null)) return 0;
-  return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]).getTime();
-}
-
-function chooseBestPhoto(files, previousKeys = new Set()) {
-  const candidates = (files || [])
-    .filter(file => getFileIds(file).contentId !== undefined)
-    .filter(file => !/\.(arw|mp4|mov)$/i.test(file.file_path || ''));
-
-  const newFiles = candidates.filter(file => !previousKeys.has(fileKey(file)));
-  const pool = newFiles.length ? newFiles : candidates;
-
-  return pool
-    .slice()
-    .sort((a, b) => {
-      const jpegScore = Number(isLikelyJpeg(b)) - Number(isLikelyJpeg(a));
-      if (jpegScore) return jpegScore;
-      const timeScore = fileTimestamp(b) - fileTimestamp(a);
-      if (timeScore) return timeScore;
-      return (b.file_size || 0) - (a.file_size || 0);
-    })[0];
-}
-
-async function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function waitForStableFile(candidates, sinceMs, timeoutMs = 30000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastPath = null;
-  let lastSize = -1;
-  let stableSince = 0;
-
-  while (Date.now() < deadline) {
-    const currentCandidates = typeof candidates === 'function' ? candidates() : candidates;
-    const existing = currentCandidates
-      .filter(Boolean)
-      .filter(filePath => fs.existsSync(filePath))
-      .map(filePath => ({ filePath, stat: fs.statSync(filePath) }))
-      .filter(({ stat }) => stat.size > 0 && stat.mtimeMs >= sinceMs - 1000)
-      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-
-    if (existing.length) {
-      const current = existing[0];
-      if (current.filePath === lastPath && current.stat.size === lastSize) {
-        if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince >= 700) return current.filePath;
-      } else {
-        lastPath = current.filePath;
-        lastSize = current.stat.size;
-        stableSince = 0;
-      }
-    }
-
-    await wait(300);
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
   }
 
-  throw new Error('Sony download did not finish in time');
-}
-
-async function composeFinalPhoto(input, { code, aspectRatio = '3:4' }) {
-  ensurePhotoDirs();
-
-  const metadata = await sharp(input).metadata();
-  if (!metadata.width || !metadata.height) throw new Error('Invalid image metadata');
-
-  const width = metadata.width;
-  const height = metadata.height;
-
-  const source = sharp(input).rotate().flop();
-  const frameBuffer = getSessionFrame(code, aspectRatio);
-
-  let pipeline = source;
-
-  if (frameBuffer) {
-    const frame = await sharp(frameBuffer)
-      .resize(width, height, { fit: 'fill' })
-      .png()
-      .toBuffer();
-    pipeline = pipeline.composite([{ input: frame, left: 0, top: 0 }]);
-  }
-
-  const finalFilename = `globo_final_${Date.now()}_${aspectRatio.replace(':', 'x')}.jpg`;
-  const finalPath = path.join(PHOTO_DIRS.final, finalFilename);
-  const downloadPath = path.join(PHOTO_DIRS.downloads, finalFilename);
-
-  // Salva no servidor (para o QR Code) de forma assíncrona para não travar
-  await pipeline
-    .jpeg({ quality: FINAL_JPEG_QUALITY, chromaSubsampling: '4:4:4' })
-    .withMetadata()
-    .toFile(finalPath);
-
-  // Salva na pasta Downloads em background (sem dar await para não atrasar a resposta da API)
-  fs.mkdir(PHOTO_DIRS.downloads, { recursive: true }, () => {
-    fs.copyFile(finalPath, downloadPath, (err) => {
-      if (err) console.error('Erro ao copiar para Downloads:', err);
-    });
-  });
-
-  const stat = fs.statSync(finalPath);
-  return {
-    finalFilename,
-    finalPath,
-    meta: {
-      sourceWidth: width,
-      sourceHeight: height,
-      finalWidth: width,
-      finalHeight: height,
-      finalBytes: stat.size,
-      format: 'jpeg',
-      quality: FINAL_JPEG_QUALITY,
-      aspectRatio,
-      frameApplied: !!frameBuffer,
-    },
-  };
-}
-
-function renderDownloadPage(filename) {
-  const safeName = safeBasename(filename, 'foto.jpg');
-  const imagePath = `/uploads/final/${encodeURIComponent(safeName)}`;
-  const downloadPath = `/download/${encodeURIComponent(safeName)}`;
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Baixar foto Globo</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #06121f; color: #fff; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    main { width: min(100%, 520px); display: flex; flex-direction: column; gap: 18px; align-items: center; }
-    img { width: 100%; height: auto; border: 10px solid #fff; border-radius: 8px; box-shadow: 0 24px 80px rgba(0,0,0,.45); background: #fff; }
-    h1 { font-size: 24px; line-height: 1.15; margin: 4px 0 0; text-align: center; }
-    p { color: rgba(255,255,255,.72); font-size: 14px; line-height: 1.5; margin: 0; text-align: center; }
-    a { width: 100%; display: inline-flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; background: #fff; color: #003B71; text-decoration: none; font-weight: 800; font-size: 16px; }
-  </style>
-</head>
-<body>
-  <main>
-    <img src="${imagePath}" alt="Sua foto">
-    <h1>Sua foto está pronta</h1>
-    <p>Toque no botão para baixar a versão em alta qualidade com a moldura.</p>
-    <a href="${downloadPath}">Baixar em alta qualidade</a>
-  </main>
-</body>
-</html>`;
-}
-
-/* ── REST API ─────────────────────────────────────────── */
-
-// Upload photo locally to avoid ImgBB compression
-app.post('/api/upload', async (req, res) => {
+  let selfsigned;
   try {
-    const { image, code, aspectRatio = '3:4' } = req.body;
-    if (!image) return res.status(400).json({ error: 'No image data' });
-
-    const inputBuffer = decodeDataImage(image);
-    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
-    const urls = buildPhotoUrls(req, finalFilename);
-    
-    res.json({ success: true, data: { ...urls, url: urls.imageUrl, image: { url: urls.imageUrl }, meta: { ...meta, inputBytes: inputBuffer.length } } });
-  } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: 'Upload failed' });
+    selfsigned = require('selfsigned');
+  } catch {
+    return null;
   }
-});
 
-// Upload frame PNG
-app.post('/api/frame/:code', upload.single('frame'), (req, res) => {
-  const session = sessions.get(req.params.code);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-
-  const ratio = req.body.aspectRatio || '3:4';
-  const key = ratio === '4:3' ? 'frame4x3' : 'frame3x4';
-
-  session[key] = { data: req.file.buffer.toString('base64'), mime: req.file.mimetype };
-
-  io.to(req.params.code).emit('frame-updated', {
-    aspectRatio: ratio,
-    frameUrl: `/api/frame/${req.params.code}?ratio=${ratio}&t=${Date.now()}`
+  const hosts = ['localhost', '127.0.0.1', ...lanAddresses()];
+  const pems = selfsigned.generate([{ name: 'commonName', value: hosts[2] || 'localhost' }], {
+    days: 825,
+    keySize: 2048,
+    algorithm: 'sha256',
+    extensions: [
+      { name: 'basicConstraints', cA: false },
+      {
+        name: 'subjectAltName',
+        altNames: hosts.map(h => (/^\d+\.\d+\.\d+\.\d+$/.test(h) ? { type: 7, ip: h } : { type: 2, value: h })),
+      },
+    ],
   });
-  res.json({ success: true });
-});
 
-// Get frame
-app.get('/api/frame/:code', (req, res) => {
-  const session = sessions.get(req.params.code);
-  if (!session) return res.status(404).send('Not found');
-  const key = (req.query.ratio === '4:3') ? 'frame4x3' : 'frame3x4';
-  const frame = session[key];
-  if (!frame) return res.status(404).send('No frame');
-  res.set('Content-Type', frame.mime);
-  res.send(Buffer.from(frame.data, 'base64'));
-});
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(keyPath, pems.private);
+  fs.writeFileSync(certPath, pems.cert);
+  console.log('Certificado autoassinado gerado em certs/');
+  return { key: pems.private, cert: pems.cert };
+}
 
-// Get photos list
-app.get('/api/photos/:code', (req, res) => {
-  const session = sessions.get(req.params.code);
-  if (!session) return res.json({ photos: [] });
-  res.json({ photos: session.photos || [] });
-});
+async function main() {
+  const { app, server, io } = await createApp();
 
-app.get('/api/version', (req, res) => {
-  const date = new Date(APP_UPDATED_AT);
-  res.json({
-    version: pkg.version,
-    updatedAt: APP_UPDATED_AT,
-    label: `v${pkg.version} • ${date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`,
-  });
-});
+  server.listen(config.port, () => {
+    const lan = lanAddresses();
+    console.log('\n🎬  Globo Photo Booth');
+    console.log(`   estado: ${config.stateDriver}   fotos: ${config.storageDriver}`);
+    console.log(`\n   HTTP   http://localhost:${config.port}`);
+    lan.forEach(ip => console.log(`          http://${ip}:${config.port}`));
 
-app.post('/api/photo/finalize', async (req, res) => {
-  try {
-    const { image, code, aspectRatio = '3:4' } = req.body;
-    if (!image) return res.status(400).json({ error: 'No image data' });
-
-    const inputBuffer = decodeDataImage(image);
-    const { finalFilename, meta } = await composeFinalPhoto(inputBuffer, { code, aspectRatio });
-    const urls = buildPhotoUrls(req, finalFilename);
-
-    res.json({ success: true, data: { ...urls, meta: { ...meta, inputBytes: inputBuffer.length } } });
-  } catch (err) {
-    console.error('Finalize photo error:', err);
-    res.status(500).json({ error: err.message || 'Finalize failed' });
-  }
-});
-
-app.get('/photo/:filename', (req, res) => {
-  const filename = safeBasename(req.params.filename, '');
-  const finalPath = path.join(PHOTO_DIRS.final, filename);
-  if (!filename || !fs.existsSync(finalPath)) return res.status(404).send('Foto não encontrada');
-  res.set('Content-Type', 'text/html; charset=utf-8');
-  res.send(renderDownloadPage(filename));
-});
-
-app.get('/download/:filename', (req, res) => {
-  const filename = safeBasename(req.params.filename, '');
-  const finalPath = path.join(PHOTO_DIRS.final, filename);
-  if (!filename || !fs.existsSync(finalPath)) return res.status(404).send('Foto não encontrada');
-  res.download(finalPath, `globo_foto_${Date.now()}.jpg`);
-});
-
-/* ═══════════════════════════════════════════════════════
-   SOCKET.IO — Sessão Persistente
-   
-   Regras:
-   1. create-session aceita code opcional → reutiliza sessão existente
-   2. Disconnect do display NÃO deleta a sessão (só nullifica displaySocket)
-   3. Disconnect do controle NÃO deleta a sessão (só nullifica controlSocket)
-   4. Sessão só é deletada após 24h de inatividade
-   5. Reconexão: display e controle podem re-join ao mesmo código
-   ═══════════════════════════════════════════════════════ */
-
-io.on('connection', (socket) => {
-  console.log('+ connected', socket.id);
-
-  /* ── Create or rejoin session (display side) ── */
-  socket.on('create-session', ({ requestedCode } = {}, cb) => {
-    // If a code was requested and the session exists, rejoin it
-    if (requestedCode && sessions.has(requestedCode)) {
-      const s = sessions.get(requestedCode);
-      // Update display socket to new connection
-      s.displaySocket = socket.id;
-      s.lastActivity = Date.now();
-      socket.join(requestedCode);
-      socket.sessionCode = requestedCode;
-
-      // Notify connected controller that display is back
-      if (s.controlSocket) {
-        io.to(s.controlSocket).emit('display-reconnected');
-      }
-
-      console.log('Display rejoined session:', requestedCode);
-      cb({ code: requestedCode, rejoined: true, photoCount: (s.photos || []).length });
+    if (!config.enableHttps) {
+      console.log('\n   HTTPS desativado (ENABLE_HTTPS=false).\n');
       return;
     }
 
-    // Create new session (use requested code if unique, otherwise generate)
-    const code = (requestedCode && !sessions.has(requestedCode)) ? requestedCode : generateCode();
-    sessions.set(code, {
-      displaySocket: socket.id,
-      controlSocket: null,
-      photos: [],
-      settings: { timer: 3, aspectRatio: '3:4' },
-      frame3x4: null,
-      frame4x3: null,
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
+    const creds = loadOrCreateCert();
+    if (!creds) {
+      console.log('\n   HTTPS indisponível: rode `npm install` para instalar "selfsigned".');
+      console.log('   Sem HTTPS o celular não libera a câmera pela rede local.\n');
+      return;
+    }
+
+    const secure = https.createServer(creds, app);
+    io.attach(secure, { path: config.socketPath });
+    secure.listen(config.httpsPort, () => {
+      console.log(`\n   HTTPS  https://localhost:${config.httpsPort}`);
+      lan.forEach(ip => console.log(`          https://${ip}:${config.httpsPort}   ← use esta no celular`));
+      console.log('\n   Totem:    /display.html      Celular-câmera: /camera.html');
+      console.log('   Controle: /control.html\n');
     });
-    socket.join(code);
-    socket.sessionCode = code;
-    cb({ code, rejoined: false, photoCount: 0 });
-    console.log('Session created:', code);
   });
+}
 
-  /* ── Join session (controller side) ── */
-  socket.on('join-session', (code, cb) => {
-    const s = sessions.get(code);
-    if (!s) return cb({ error: 'Código inválido' });
-
-    s.controlSocket = socket.id;
-    s.lastActivity = Date.now();
-    socket.join(code);
-    socket.sessionCode = code;
-
-    // Notify display
-    if (s.displaySocket) {
-      io.to(s.displaySocket).emit('controller-connected');
-    }
-
-    cb({
-      success: true,
-      settings: s.settings,
-      hasFrame3x4: !!s.frame3x4,
-      hasFrame4x3: !!s.frame4x3,
-      photoCount: (s.photos || []).length
-    });
-
-    // Send existing photos to the joining controller
-    if (s.photos && s.photos.length > 0) {
-      socket.emit('session-photos', { photos: s.photos });
-    }
-    console.log('Controller joined:', code);
-  });
-
-  /* ── Trigger capture ── */
-  socket.on('trigger-capture', ({ code, timer }) => {
-    const s = sessions.get(code);
-    if (s) {
-      s.lastActivity = Date.now();
-      if (s.displaySocket) io.to(s.displaySocket).emit('start-countdown', { timer });
-    }
-  });
-
-  /* ── Photo uploaded ── */
-  socket.on('photo-uploaded', ({ code, url, thumbnail }) => {
-    const s = sessions.get(code);
-    if (s) {
-      s.photos.push({ url, thumbnail, ts: Date.now() });
-      s.lastActivity = Date.now();
-      io.to(code).emit('photo-ready', { url, thumbnail, total: s.photos.length });
-    }
-  });
-
-  /* ── Update settings ── */
-  socket.on('update-settings', ({ code, settings }) => {
-    const s = sessions.get(code);
-    if (s) {
-      Object.assign(s.settings, settings);
-      s.lastActivity = Date.now();
-      io.to(code).emit('settings-updated', s.settings);
-    }
-  });
-
-  /* ── Re-show photo on display (gallery tap) ── */
-  socket.on('show-photo', ({ code, url }) => {
-    const s = sessions.get(code);
-    if (s && s.displaySocket) io.to(s.displaySocket).emit('show-photo', { url });
-  });
-
-  /* ── Reset to preview (operator "Next" button) ── */
-  socket.on('reset-to-preview', ({ code }) => {
-    const s = sessions.get(code);
-    if (s && s.displaySocket) io.to(s.displaySocket).emit('reset-to-preview');
-  });
-
-  /* ── Camera control relay ── */
-  socket.on('cam-control', ({ code, cmd }) => {
-    const s = sessions.get(code);
-    if (s && s.displaySocket) io.to(s.displaySocket).emit('cam-control', { cmd });
-  });
-
-
-  /* ── Disconnect — DOES NOT DELETE SESSION ──
-     Session survives both display and controller disconnects.
-     Only cleaned up after 24h of inactivity. */
-  socket.on('disconnect', () => {
-    const code = socket.sessionCode;
-    if (!code) return;
-    const s = sessions.get(code);
-    if (!s) return;
-
-    if (s.displaySocket === socket.id) {
-      s.displaySocket = null;
-      // Notify controller that display went away (but session lives)
-      if (s.controlSocket) {
-        io.to(s.controlSocket).emit('display-disconnected');
-      }
-      console.log('Display disconnected (session preserved):', code);
-    } else if (s.controlSocket === socket.id) {
-      s.controlSocket = null;
-      // Notify display that controller went away
-      if (s.displaySocket) {
-        io.to(s.displaySocket).emit('controller-disconnected');
-      }
-      console.log('Controller disconnected (session preserved):', code);
-    }
-  });
-});
-
-// Cleanup sessions older than 24h of inactivity
-setInterval(() => {
-  const now = Date.now();
-  for (const [code, s] of sessions) {
-    if (now - (s.lastActivity || s.createdAt) > 86400000) {
-      sessions.delete(code);
-      console.log('Session expired:', code);
-    }
-  }
-}, 1800000);
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`\n🎬 Globo Photo Booth → http://localhost:${PORT}\n`);
+main().catch(err => {
+  console.error('\nFalha ao subir o servidor:', err.message, '\n');
+  process.exit(1);
 });

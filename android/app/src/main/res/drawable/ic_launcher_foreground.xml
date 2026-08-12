@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Marca da Globo em vetor: evita PNG binário no repositório e escala
+     em qualquer densidade. Caminho vindo do SVG usado nas páginas web. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group android:translateX="27" android:translateY="27">
+        <path
+            android:fillColor="#05A6FF"
+            android:fillType="evenOdd"
+            android:pathData="M27,54C41.912,54 54,41.912 54,27C54,12.088 41.912,0 27,0C12.088,0 0,12.088 0,27C0,41.912 12.088,54 27,54ZM27,42.428C35.521,42.428 42.428,35.521 42.428,27C42.428,18.479 35.521,11.571 27,11.571C18.479,11.571 11.571,18.479 11.571,27C11.571,35.521 18.479,42.428 27,42.428Z" />
+        <path
+            android:fillColor="#05A6FF"
+            android:pathData="M36.257,27A9.257,9.257 0,0 1,27 36.257A9.257,9.257 0,0 1,17.743 27A9.257,9.257 0,0 1,36.257 27Z" />
+    </group>
+</vector>
