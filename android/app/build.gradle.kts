@@ -20,10 +20,46 @@ android {
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://globo-photobooth.vercel.app\"")
     }
 
+    /*
+     * Assinatura estável.
+     *
+     * O Android recusa atualizar um app assinado com chave diferente da
+     * instalada — dá "o pacote tem conflito com um pacote existente". A
+     * chave de debug do Gradle é gerada na máquina de build, então cada
+     * execução do CI produzia um APK com assinatura nova e a atualização
+     * era impossível.
+     *
+     * A chave vem do ambiente (Secrets do GitHub) e nunca entra no
+     * repositório. Sem ela — build local, por exemplo — o Gradle cai na
+     * chave de debug de sempre.
+     */
+    val keystoreB64: String? = System.getenv("ANDROID_KEYSTORE_B64")
+    val keystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    val keystoreFile = rootProject.file("release.p12")
+
+    if (!keystoreB64.isNullOrBlank() && !keystorePassword.isNullOrBlank()) {
+        keystoreFile.writeBytes(java.util.Base64.getDecoder().decode(keystoreB64.trim()))
+    }
+
+    signingConfigs {
+        create("stable") {
+            if (keystoreFile.exists() && !keystorePassword.isNullOrBlank()) {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = "fotoboarding"
+                keyPassword = keystorePassword
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // O APK de debug é o que sai do CI para sideload interno.
             isMinifyEnabled = false
+            if (keystoreFile.exists() && !keystorePassword.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
         }
         release {
             isMinifyEnabled = true

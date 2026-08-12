@@ -20,6 +20,10 @@ android/local.properties
 android/.idea/
 *.apk
 *.keystore
+# A chave de assinatura vem dos Secrets do GitHub e é materializada no
+# build; nunca deve entrar no repositório.
+*.p12
+*.jks
 
 .vercel
 .env*

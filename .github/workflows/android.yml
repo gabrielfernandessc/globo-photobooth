@@ -38,9 +38,20 @@ jobs:
       - name: Versão do Gradle
         run: gradle --version
 
+      # Sem assinatura estável, cada build sai com uma chave diferente e
+      # o Android recusa a atualização por conflito de pacote.
       - name: Compilar APK de debug
         working-directory: android
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Conferir a assinatura
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -r | head -1)
+          "$APKSIGNER" verify --print-certs \
+            android/app/build/outputs/apk/debug/app-debug.apk | grep -i "SHA-256 digest" | head -2
 
       # O versionCode sai do build.gradle e vira a tag: é por ele que o
       # app decide se a release publicada é mais nova que a instalada.
