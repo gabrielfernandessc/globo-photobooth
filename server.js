@@ -12,19 +12,14 @@
 require('dotenv').config();
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const https = require('https');
 
 const { config } = require('./lib/config');
 const { createApp } = require('./lib/app');
-
-function lanAddresses() {
-  return Object.values(os.networkInterfaces())
-    .flat()
-    .filter(i => i && i.family === 'IPv4' && !i.internal)
-    .map(i => i.address);
-}
+// A escolha do endereço mora em lib/network: o QR de pareamento e este
+// boot precisam concordar sobre qual IP o celular alcança.
+const { lanAddresses } = require('./lib/network');
 
 function loadOrCreateCert() {
   const dir = path.join(__dirname, 'certs');
