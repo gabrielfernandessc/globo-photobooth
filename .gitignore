@@ -9,6 +9,12 @@ certs/
 # Fotos do evento
 public/uploads/
 
+# Banco do evento: fotos, fila de publicação e configurações
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # Vercel
 .vercel
 

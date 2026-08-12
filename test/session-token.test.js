@@ -7,6 +7,9 @@
    ══════════════════════════════════════════════════════════ */
 
 process.env.SESSION_SECRET = 'segredo-de-teste-nao-usado-em-producao';
+// generateCode consulta o store; sem isto o teste criaria um banco no
+// diretório do projeto.
+process.env.DATABASE_FILE = ':memory:';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

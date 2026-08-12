@@ -15,6 +15,8 @@ const path = require('path');
 
 const UPLOADS = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-api-'));
 process.env.UPLOADS_DIR = UPLOADS;
+process.env.DATA_DIR = UPLOADS;
+process.env.DATABASE_FILE = path.join(UPLOADS, 'booth.sqlite');
 process.env.SAVE_TO_DOWNLOADS = 'false';
 process.env.ENABLE_HTTPS = 'false';
 
@@ -124,9 +126,10 @@ test('a foto atravessa o caminho inteiro: upload, composição, página e downlo
   assert.equal(dims.height, 4000);
 });
 
-test('a foto continua acessível depois de o servidor reiniciar', async () => {
-  // O invariante local-first: o disco é a verdade. Um restart no meio do
-  // evento não pode transformar as fotos já tiradas em 404.
+test('a foto é servida por uma instância que não a recebeu', async () => {
+  // Metade do invariante local-first: quem resolve a foto é o disco, não
+  // a memória de quem atendeu o upload. O restart de processo completo é
+  // coberto por db.test.js e pelo teste de sistema.
   const { code } = await novaSessao();
   const jpeg = await fixtures.solidJpeg({ width: 1600, height: 1200 });
   const { body } = await enviarFoto(code, jpeg);
