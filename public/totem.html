@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Globo Photo Booth — Totem</title>
+<style>
+  /* ══════════════════════════════════════════════════════
+     Telão de evento, sob o Livro da Marca Globo 2.0.
+
+     Visto de longe, em pé, por gente que nunca usou o
+     sistema: uma mensagem por vez e contraste alto.
+
+     Decisões de marca que valem registro:
+
+     · Fundo BRANCO, que o manual lista como prioritário.
+       Num totem ele ainda trabalha como luz de preenchimento
+       no rosto de quem está sendo fotografado.
+     · Por isso NÃO há gradiente de fundo — e é justamente
+       o que libera a linha multicolorida na base, proibida
+       de conviver com outro gradiente na mesma peça.
+     · Três tamanhos tipográficos por tela, no máximo.
+     · Alinhamento à esquerda ou centralizado. Nunca à direita.
+     ══════════════════════════════════════════════════════ */
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    /* Paleta principal — valores publicados no manual */
+    --globo-azul:     #05A6FF;
+    --globo-roxo:     #8800F8;
+    --globo-vermelho: #FF0C1F;
+    --globo-amarelo:  #FFD006;
+    --preto:          #000000;
+    --preto-50:       #939598;
+    --preto-25:       #C7C8CA;
+    --preto-5:        #F2F2F2;
+    --branco:         #FFFFFF;
+
+    /* Gradientes autorizados: lineares, horizontais, uniformes.
+       O gradiente Globo NÃO pode ser fundo — aqui ele existe
+       só na linha multicolorida da base. */
+    --grad-globo: linear-gradient(90deg,
+      var(--globo-azul) 0%, var(--globo-roxo) 33.33%,
+      var(--globo-vermelho) 67%, var(--globo-amarelo) 100%);
+    --grad-azul: linear-gradient(90deg, var(--globo-azul) 0%, var(--globo-roxo) 100%);
+
+    /* Escala de espaçamento do manual */
+    --s1: 4px;  --s2: 8px;   --s3: 16px; --s4: 24px; --s5: 32px;
+    --s6: 48px; --s7: 64px;  --s8: 96px; --s9: 128px; --s10: 192px;
+
+    /* Raio de mosaico definido no manual */
+    --raio-mosaico: 15px;
+
+    /* Linha multicolorida: 32 px ou 24 px, sempre na base */
+    --linha-multicolor: 32px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--branco);
+    color: var(--preto);
+    /* Globotipo é proprietária e não acompanha este repositório.
+       A pilha abaixo é substituição temporária: trocar pelos
+       arquivos licenciados antes de ir a público. */
+    font-family: "Globotipo corporativa", -apple-system, "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    /* Num totem não existe seleção de texto nem menu de contexto. */
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: none;
+  }
+
+  /* Linha multicolorida — assinatura da marca, sempre na base
+     e sem nenhum outro gradiente na tela. */
+  body::after {
+    content: "";
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: var(--linha-multicolor);
+    background: var(--grad-globo);
+    z-index: 60;
+    pointer-events: none;
+  }
+
+  #palco {
+    position: fixed;
+    inset: 0;
+    /* Espaço para a linha multicolorida não cobrir conteúdo. */
+    bottom: var(--linha-multicolor);
+    display: grid;
+    place-items: center;
+  }
+
+  /* ── Camadas: só uma visível por vez ── */
+  .cena {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  .cena[data-ativa] { opacity: 1; pointer-events: auto; }
+
+  /* ── Preview ── */
+  #preview {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* Preto 5% no letterbox: o manual não autoriza preto acima de 5%
+       como fundo, e o cinza claro ainda separa a imagem da tela. */
+    background: var(--preto-5);
+  }
+
+  /* A moldura sobreposta ao preview mostra o enquadramento REAL, para
+     o convidado se posicionar onde a foto vai de fato cortar. */
+  #molduraPreview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  /* ── Contagem ──
+     Escala display do manual, sem sombra: o manual proíbe efeitos. */
+  #numero {
+    font-size: min(42vw, 42vh);
+    font-weight: 700;
+    line-height: 1;
+    color: var(--preto);
+    animation: pulsa .9s ease-out;
+  }
+  @keyframes pulsa {
+    0%   { transform: scale(.55); opacity: 0; }
+    45%  { transform: scale(1.06); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  #sorria {
+    font-size: min(11vw, 14vh);
+    font-weight: 700;
+    color: var(--preto);
+  }
+
+  /* O flash cobre a tela no instante do disparo: dá feedback de que a
+     foto aconteceu, e disfarça o congelamento do preview enquanto a
+     câmera solta o USB. */
+  #flash {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 50;
+  }
+  #flash.dispara { animation: clarao .5s ease-out; }
+  @keyframes clarao {
+    0% { opacity: .95; }
+    100% { opacity: 0; }
+  }
+
+  /* ── Resultado ──
+     Aqui a tela COMEMORA. O gradiente azul é fundo autorizado pelo
+     manual (só o gradiente Globo multicolorido é proibido como fundo),
+     e é o que dá a virada de clima entre "se posicione" e "ficou
+     pronta".
+
+     Com gradiente na tela, a linha multicolorida sai: o manual proíbe
+     dois gradientes na mesma peça. */
+  .cena[data-cena="RESULTADO"] {
+    background: var(--grad-azul);
+  }
+  body:has(.cena[data-cena="RESULTADO"][data-ativa])::after {
+    display: none;
+  }
+
+  /* A foto é a estrela: ela recebe todo o espaço que sobra, e o
+     cartão do QR só o que precisa para ser legível. */
+  .cena[data-cena="RESULTADO"] { place-items: stretch; }
+
+  #resultado {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    /* A linha precisa de altura definida: com linha automática, o
+       max-height:100% da foto vira referência circular e resolve para
+       a altura natural dela — que estoura a tela e corta a moldura. */
+    grid-template-rows: minmax(0, 1fr);
+    gap: var(--s6);
+    align-items: center;
+    padding: var(--s5) var(--s6) var(--s6);
+    /* Abre espaço para a frase de comemoração, que é posicionada
+       sobre esta área. */
+    padding-top: min(13vh, 120px);
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* Telas em pé (ou janelas estreitas): empilha em vez de espremer. */
+  @media (max-aspect-ratio: 1/1) {
+    #resultado {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto;
+      justify-items: center;
+    }
+    #painelQr {
+      max-width: min(80vw, 520px);
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #qr { width: min(38vw, 260px); }
+  }
+
+  #celebracao {
+    position: absolute;
+    top: var(--s6);
+    left: 0; right: 0;
+    text-align: center;
+    font-size: min(4.2vw, 56px);
+    font-weight: 700;
+    line-height: 1;
+    color: var(--branco);
+    animation: sobe .5s ease-out;
+  }
+  @keyframes sobe {
+    from { transform: translateY(18px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+  /* Sem sombra e sem borda: o manual proíbe efeitos, e o raio de
+     mosaico é o único definido — 15 px. */
+  /* max-* em vez de width/height 100%: com 100% a imagem estoura o
+     container e a base da moldura — justamente onde fica a assinatura
+     do evento — é cortada. Sobrar fundo é aceitável; cortar a arte não. */
+  #fotoFinal {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    margin: auto;
+    min-height: 0;
+    min-width: 0;
+    border-radius: var(--raio-mosaico);
+  }
+  /* Cartão branco sobre o gradiente: máximo contraste para o QR e
+     para a instrução, que é o que o convidado precisa ler. */
+  #painelQr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s4);
+    background: var(--branco);
+    color: var(--preto);
+    border-radius: var(--raio-mosaico);
+    padding: var(--s6) var(--s5);
+    max-width: min(34vw, 460px);
+  }
+  /* Três tamanhos nesta tela: título, apoio e rótulo. */
+  #painelQr h2 {
+    font-size: min(2.6vw, 34px);
+    line-height: 1.05;
+    text-align: center;
+    font-weight: 700;
+  }
+  #qr {
+    width: min(24vw, 330px);
+    height: auto;
+    background: var(--branco);
+    border-radius: var(--raio-mosaico);
+  }
+  #painelQr p {
+    font-size: min(1.5vw, 20px);
+    line-height: 1.35;
+    text-align: center;
+    color: var(--preto-50);
+  }
+
+  #statusPublicacao {
+    font-size: min(1.5vw, 20px);
+    padding: var(--s2) var(--s4);
+    border-radius: var(--raio-mosaico);
+    background: var(--branco);
+    color: var(--preto-50);
+  }
+  /* Estado não pode depender só de cor: o texto já diz o que houve. */
+  #statusPublicacao[data-estado="published"] { color: var(--preto); }
+
+  /* Barra de tempo até voltar ao preview: o convidado vê quanto ainda
+     tem para fotografar o QR. */
+  /* Fica acima da linha multicolorida para não disputar com ela. */
+  #tempoRestante {
+    position: fixed;
+    left: 0;
+    bottom: var(--linha-multicolor);
+    height: var(--s2);
+    background: var(--branco);
+    width: 100%;
+    transform-origin: left;
+    z-index: 40;
+  }
+
+  /* ── Mensagens de estado ── */
+  .aviso {
+    text-align: center;
+    padding: 5vh 6vw;
+    max-width: 1100px;
+  }
+  .aviso h1 {
+    font-size: min(6vw, 76px);
+    font-weight: 700;
+    line-height: 1;
+    color: var(--preto);
+    margin-bottom: var(--s4);
+  }
+  .aviso p {
+    font-size: min(2.4vw, 30px);
+    line-height: 1.35;
+    color: var(--preto-50);
+  }
+  .aviso code {
+    display: inline-block;
+    margin-top: var(--s5);
+    font-size: min(1.7vw, 21px);
+    background: var(--preto-5);
+    color: var(--preto-50);
+    padding: var(--s3) var(--s4);
+    border-radius: var(--raio-mosaico);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .pisca { animation: respira 2.2s ease-in-out infinite; }
+  @keyframes respira { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+  /* Convite discreto quando está pronto para fotografar. */
+  /* Convite para fotografar. Sem caixa alta e sem sublinhado, como o
+     manual pede para rótulos de ação. */
+  #chamada {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--linha-multicolor) + var(--s6));
+    transform: translateX(-50%);
+    font-size: min(3vw, 38px);
+    font-weight: 700;
+    padding: var(--s4) var(--s6);
+    border-radius: var(--raio-mosaico);
+    background: var(--branco);
+    color: var(--preto);
+    z-index: 30;
+  }
+
+  /* ── Diagnóstico: só com a tecla D ── */
+  #diagnostico {
+    position: fixed;
+    top: 12px; right: 12px;
+    background: rgba(0,0,0,.82);
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 12px 16px;
+    border-radius: 10px;
+    z-index: 100;
+    display: none;
+    white-space: pre;
+    color: #9fe8b8;
+  }
+  #diagnostico[data-visivel] { display: block; }
+</style>
+</head>
+<body>
+
+<div id="palco">
+
+  <!-- Subindo -->
+  <section class="cena" data-cena="BOOTING">
+    <div class="aviso">
+      <h1 class="pisca">Preparando o totem…</h1>
+    </div>
+  </section>
+
+  <!-- Sem câmera -->
+  <section class="cena" data-cena="SEM_CAMERA">
+    <div class="aviso">
+      <h1>Câmera desconectada</h1>
+      <p>Confira o cabo USB e se a câmera está ligada.<br>O totem religa sozinho assim que ela voltar.</p>
+      <code id="detalheCamera">procurando…</code>
+    </div>
+  </section>
+
+  <!-- Pronto: preview ao vivo -->
+  <section class="cena" data-cena="PRONTO">
+    <img id="preview" alt="">
+    <img id="molduraPreview" alt="" hidden>
+  </section>
+
+  <!-- Contagem -->
+  <section class="cena" data-cena="CONTAGEM">
+    <div id="numero">3</div>
+  </section>
+
+  <!-- Disparando -->
+  <section class="cena" data-cena="CAPTURANDO">
+    <div id="sorria">Sorria!</div>
+  </section>
+
+  <!-- Processando -->
+  <section class="cena" data-cena="PROCESSANDO">
+    <div class="aviso">
+      <h1 class="pisca">Revelando sua foto…</h1>
+    </div>
+  </section>
+
+  <!-- Resultado -->
+  <section class="cena" data-cena="RESULTADO">
+    <p id="celebracao">Ficou ótima! 🎉</p>
+    <div id="resultado">
+      <img id="fotoFinal" alt="Sua foto">
+      <aside id="painelQr">
+        <h2>Leve sua foto 📲</h2>
+        <img id="qr" alt="QR Code para baixar a foto">
+        <p>Aponte a câmera do celular<br>e baixe em alta qualidade</p>
+        <span id="statusPublicacao">salva no totem</span>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Erro recuperável -->
+  <section class="cena" data-cena="ERRO">
+    <div class="aviso">
+      <h1>Não deu certo dessa vez</h1>
+      <p id="mensagemErro">Vamos tentar de novo.</p>
+    </div>
+  </section>
+
+</div>
+
+<div id="chamada" hidden>Toque para fotografar</div>
+<div id="flash"></div>
+<div id="tempoRestante" hidden></div>
+<pre id="diagnostico"></pre>
+
+<!-- Config antes de tudo: window.__BOOTH__ preenchido sem await no cliente. -->
+<script src="/api/config.js"></script>
+<script src="/js/vendor/socket.io.min.js"></script>
+<script src="/js/totem.js"></script>
+</body>
+</html>

@@ -16,6 +16,9 @@ process.env.DATA_DIR = UPLOADS;
 process.env.DATABASE_FILE = path.join(UPLOADS, 'booth.sqlite');
 process.env.SAVE_TO_DOWNLOADS = 'false';
 process.env.ENABLE_HTTPS = 'false';
+// Teste jamais toca no hardware: sem isto a suite disputa o USB com o
+// gphoto2 e trava esperando uma camera real responder.
+process.env.CAMERA_SOURCE = 'nenhum';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

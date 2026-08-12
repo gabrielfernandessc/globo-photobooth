@@ -36,6 +36,7 @@ async function subirServidor(extraEnv = {}) {
       PORT: String(PORTA),
       ENABLE_HTTPS: 'false',
       SAVE_TO_DOWNLOADS: 'false',
+      CAMERA_SOURCE: 'nenhum',
       DATA_DIR: dataDir,
       UPLOADS_DIR: path.join(dataDir, 'uploads'),
       DATABASE_FILE: path.join(dataDir, 'booth.sqlite'),
