@@ -182,10 +182,33 @@
     }, RELAY_AFTER_MS);
   }
 
-  /** QR que abre a página da câmera já com o código preenchido. */
-  function renderPairPanel() {
+  /**
+   * QR que abre a página da câmera já com o código preenchido.
+   *
+   * O endereço NÃO pode sair de location.origin: o operador abre o
+   * telão em localhost, e um celular que escaneasse isso tentaria
+   * conectar em si mesmo. Quem sabe o endereço alcançável pela LAN — e
+   * a porta TLS que o celular precisa para liberar a câmera — é o
+   * servidor, então é ele quem responde.
+   */
+  async function renderPairPanel() {
     if (!pairQr || !sessionCode) return;
-    const url = `${location.origin}/camera.html?code=${sessionCode}`;
+
+    let url;
+    try {
+      const resp = await fetch(`/api/pair?code=${encodeURIComponent(sessionCode)}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      url = (await resp.json()).cameraUrl;
+    } catch (err) {
+      // Sem rede local o pareamento por QR não tem como funcionar.
+      // Dizer isso é mais útil que exibir um QR que não conecta.
+      console.warn('pareamento indisponível:', err.message);
+      pairQr.removeAttribute('src');
+      pairUrlEl.textContent = 'Totem sem rede local — conecte o PC ao Wi-Fi do evento';
+      pairPanel.classList.remove('hidden');
+      return;
+    }
+
     pairQr.src = `/api/qr?size=360&data=${encodeURIComponent(url)}`;
     pairUrlEl.textContent = url.replace(/^https?:\/\//, '');
     pairPanel.classList.toggle('hidden', source === 'phone');
