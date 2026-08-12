@@ -27,11 +27,16 @@ jobs:
           java-version: '17'
 
       # Sem gradle-wrapper.jar no repositório: um binário versionado a
-      # menos, e o Gradle vem do próprio runner.
-      - name: Gradle
+      # menos. Usa o Gradle já instalado no runner em vez de baixar uma
+      # distribuição — o download falhou com erro de TLS no proxy do
+      # GitHub, e é uma dependência de rede que não precisa existir.
+      - name: Gradle (cache)
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          cache-read-only: false
+
+      - name: Versão do Gradle
+        run: gradle --version
 
       - name: Compilar APK de debug
         working-directory: android
