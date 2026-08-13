@@ -142,7 +142,7 @@ IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null |
 # navegador pessoal de quem estiver usando o Mac.
 PERFIL="$HOME/Library/Application Support/GloboPhotoBooth/chrome"
 mkdir -p "$PERFIL"
-ALVO="http://localhost:$PORTA/display.html"
+ALVO="http://localhost:$PORTA/totem.html"
 
 if [ -n "${PHOTOBOOTH_SEM_TELAO:-}" ]; then
   # Diagnóstico: sobe o servidor sem tomar a tela.

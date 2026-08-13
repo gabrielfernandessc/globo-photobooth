@@ -156,7 +156,7 @@ Escreve ''
 
 # ── Telão ────────────────────────────────────────────────
 if (-not $NoDisplay) {
-    $urlTelao = "http://localhost:$Port/display.html"
+    $urlTelao = "http://localhost:$Port/totem.html"
     $navegador = @(
         "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
         "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
