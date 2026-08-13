@@ -229,3 +229,30 @@ test('duas capturas seguidas nunca colidem de nome', async () => {
 
   assert.equal(nomes.size, 12, 'houve colisão de nome entre capturas — uma foto sobrescreveria a outra');
 });
+
+test('a moldura padrão do projeto é usada quando a sessão não tem uma', async () => {
+  // Carregar moldura não pode ser ritual de véspera: a arte é parte da
+  // identidade do evento. Sem isto, esquecer o upload custa uma noite
+  // inteira de fotos sem moldura, e ninguém percebe até ver o resultado.
+  const arte = await fixtures.framePng({ width: 1440, height: 1080, border: 0.06 });
+  const caminho = path.join(UPLOADS, 'padrao-de-teste.png');
+  fs.writeFileSync(caminho, arte);
+
+  // O módulo lê o caminho da config e guarda o arquivo em cache.
+  const { config } = require('../lib/config');
+  const anterior = config.defaultFramePath;
+  config.defaultFramePath = caminho;
+  delete require.cache[require.resolve('../lib/photo')];
+  const { composeFinalPhoto: comPadrao } = require('../lib/photo');
+
+  try {
+    // Sessão SEM moldura própria.
+    const input = await fixtures.quadrantJpeg({ width: 3000, height: 4000 });
+    const { meta } = await comPadrao(input, { session: newSession('TEST'), aspectRatio: '3:4' });
+
+    assert.equal(meta.frameApplied, true, 'a moldura padrão deveria ter entrado sozinha');
+  } finally {
+    config.defaultFramePath = anterior;
+    delete require.cache[require.resolve('../lib/photo')];
+  }
+});
