@@ -26,6 +26,19 @@ let PORTA = ProcessInfo.processInfo.environment["PHOTOBOOTH_PORT"] ?? "3000"
 /// movido para /Applications sem perder de vista o projeto.
 let REPO = ProcessInfo.processInfo.environment["PHOTOBOOTH_REPO"] ?? "__REPO__"
 
+/**
+ Janela sem borda que ainda aceita foco.
+
+ O macOS recusa dar status de "chave" a uma janela `.borderless` — é o
+ padrão para paletas e HUDs, que não devem roubar o teclado. Num totem
+ isso quebra tudo de uma vez: a janela não se apresenta direito e a
+ barra de espaço, que é o gatilho da foto, nunca chega ao conteúdo.
+ */
+final class JanelaDoTotem: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     var janela: NSWindow!
@@ -62,8 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         encerrarServidor()
     }
 
+    /* Falso de propósito: se a janela sumir por qualquer motivo — tela
+       externa que desliga, monitor desconectado no meio do evento — o
+       totem não pode se encerrar junto e levar o servidor com ele. */
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
-        return true
+        return false
     }
 
     // MARK: - Janela
@@ -102,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
         // .borderless: o totem não tem barra de título para arrastar nem
         // botão de fechar ao alcance de um convidado curioso.
-        janela = NSWindow(contentRect: tela,
+        janela = JanelaDoTotem(contentRect: tela,
                           styleMask: [.borderless],
                           backing: .buffered,
                           defer: false)
