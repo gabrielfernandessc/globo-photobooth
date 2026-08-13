@@ -98,6 +98,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
      PHOTOBOOTH_TELA=principal força o comportamento antigo, para quando
      o Mac estiver ligado direto na TV sem segundo monitor.
      */
+    /// Move a janela para a tela pedida (1 = Mac, 2 = externa).
+    @objc func irParaTela(_ item: NSMenuItem) {
+        let telas = NSScreen.screens
+        guard item.tag >= 1, item.tag <= telas.count else { return }
+        let alvo = telas[item.tag - 1].visibleFrame
+
+        if janela.styleMask.contains(.fullScreen) { janela.toggleFullScreen(nil) }
+        janela.setFrame(alvo, display: true, animate: true)
+        escrever("telão movido para a tela \(item.tag) (\(Int(alvo.width))x\(Int(alvo.height)))")
+    }
+
+    @objc func alternarTelaCheia() {
+        janela.toggleFullScreen(nil)
+    }
+
     private func telaDoTotem() -> NSRect {
         let telas = NSScreen.screens
         let padrao = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -116,23 +131,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private func montarJanela() {
         let tela = telaDoTotem()
 
-        // .borderless: o totem não tem barra de título para arrastar nem
-        // botão de fechar ao alcance de um convidado curioso.
+        /* Janela normal por padrão.
+           A versão anterior nascia sem borda e em tela cheia, e o
+           operador não tinha como fechar, mover nem escolher o monitor.
+           Um totem que prende quem opera é pior que um totem que mostra
+           a barra de título: a tela cheia agora é um modo (CMD+F), não
+           uma imposição. */
         janela = JanelaDoTotem(contentRect: tela,
-                          styleMask: [.borderless],
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered,
                           defer: false)
+        janela.title = "Globo Photo Booth"
+        janela.center()
         /* Tela cheia de totem, não de aplicativo.
            Uma janela borderless do tamanho da tela AINDA fica debaixo do
            Dock e da barra de menus — eles aparecem por cima da foto,
            quebrando a ilusão e dando ao convidado onde clicar. Subir o
            nível acima do menu resolve a sobreposição; esconder os dois
            resolve o resto. */
-        janela.level = .mainMenu + 1
         janela.backgroundColor = .white
         janela.isOpaque = true
-        janela.collectionBehavior = [.fullScreenPrimary, .canJoinAllSpaces, .stationary]
-        janela.hidesOnDeactivate = false
+        janela.collectionBehavior = [.fullScreenPrimary]
 
         let config = WKWebViewConfiguration()
         // O preview é MJPEG numa <img>; nada precisa de gesto do usuário
@@ -149,22 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         janela.contentView = web
         janela.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-
-        /* Dock e barra de menus somem enquanto o totem está ativo.
-           CMD+TAB continua funcionando de propósito: prender o operador
-           dentro do app seria pior que um convidado ver o Dock. */
-        NSApp.presentationOptions = [.hideDock, .hideMenuBar]
-
-        // Se o operador trocar de app e voltar, a tela cheia tem que
-        // voltar junto — senão o Dock reaparece no meio do evento.
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil, queue: .main
-        ) { _ in
-            NSApp.presentationOptions = [.hideDock, .hideMenuBar]
-            self.janela.level = .mainMenu + 1
-            self.janela.makeKeyAndOrderFront(nil)
-        }
 
         mostrar(html: telaDeEspera(mensagem: "Preparando o totem…"))
     }
@@ -358,14 +361,42 @@ app.setActivationPolicy(.regular)
    derrubar o servidor, que é o que se quer quando a tela trava mas o
    evento continua. Nada disso está num menu visível: o convidado não
    deve encontrar caminho para sair. */
+/* Menu do operador.
+
+   A versão anterior escondia a barra de menus e subia a janela acima
+   dela — o app ficava sem saída, nem para fechar. Aqui tudo é
+   alcançável: tela cheia, escolha de monitor e encerrar. */
 let menu = NSMenu()
-let item = NSMenuItem()
-let submenu = NSMenu()
-submenu.addItem(withTitle: "Recarregar telão", action: #selector(WKWebView.reload(_:)), keyEquivalent: "r")
-submenu.addItem(NSMenuItem.separator())
-submenu.addItem(withTitle: "Encerrar Photo Booth", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-item.submenu = submenu
-menu.addItem(item)
+
+let itemApp = NSMenuItem()
+let menuApp = NSMenu()
+menuApp.addItem(withTitle: "Recarregar telão", action: #selector(WKWebView.reload(_:)), keyEquivalent: "r")
+menuApp.addItem(NSMenuItem.separator())
+menuApp.addItem(withTitle: "Encerrar Photo Booth", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+itemApp.submenu = menuApp
+menu.addItem(itemApp)
+
+let itemTela = NSMenuItem()
+itemTela.title = "Tela"
+let menuTela = NSMenu(title: "Tela")
+
+let cheia = NSMenuItem(title: "Tela cheia", action: #selector(AppDelegate.alternarTelaCheia), keyEquivalent: "f")
+cheia.target = delegate
+menuTela.addItem(cheia)
+menuTela.addItem(NSMenuItem.separator())
+
+// Um item por monitor, para o operador mandar o telão para a TV sem
+// arrastar janela.
+for (i, t) in NSScreen.screens.enumerated() {
+    let nome = "Tela \(i + 1) — \(Int(t.frame.width))×\(Int(t.frame.height))"
+    let item = NSMenuItem(title: nome, action: #selector(AppDelegate.irParaTela(_:)), keyEquivalent: "\(i + 1)")
+    item.tag = i + 1
+    item.target = delegate
+    menuTela.addItem(item)
+}
+
+itemTela.submenu = menuTela
+menu.addItem(itemTela)
 app.mainMenu = menu
 
 app.run()

@@ -297,8 +297,20 @@
       const emEspera = ['BOOTING', 'SEM_CAMERA', 'PRONTO'].includes(estado.atual);
       if (!emEspera) return;
 
-      if (status.transmitindo && estado.atual !== 'PRONTO') ir('PRONTO');
-      else if (!status.transmitindo && estado.atual === 'PRONTO') ir('SEM_CAMERA');
+      /* O que decide se dá para fotografar é a CÂMERA ESTAR CONECTADA,
+         não o preview estar fluindo.
+
+         A Sony hiberna o live view depois de alguns minutos parada, mas
+         continua respondendo ao disparo — ela acorda para fotografar.
+         Exigir preview fazia o totem se declarar fora do ar numa fila
+         que só precisava de alguém apertar o botão.
+
+         Sem preview a cena PRONTO mostra a chamada e o convidado se
+         posiciona pela marca no chão. Menos confortável, e infinitamente
+         melhor que um totem que se recusa a trabalhar. */
+      const podeUsar = !!status.modelo && status.estado !== 'falha';
+      if (podeUsar && estado.atual !== 'PRONTO') ir('PRONTO');
+      else if (!podeUsar && estado.atual === 'PRONTO') ir('SEM_CAMERA');
       else if (estado.atual === 'BOOTING') ir('SEM_CAMERA');
     } catch (erro) {
       console.warn('status da câmera indisponível', erro);
