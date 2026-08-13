@@ -20,6 +20,9 @@ process.env.STATE_DRIVER = 'memory';
 process.env.STORAGE_DRIVER = 'local';
 process.env.UPLOADS_DIR = UPLOADS;
 process.env.DATA_DIR = UPLOADS;
+// Sem moldura padrao: estes testes afirmam sobre a foto crua. A
+// moldura do projeto tem teste proprio.
+process.env.DEFAULT_FRAME = '/inexistente/sem-moldura.png';
 process.env.SAVE_TO_DOWNLOADS = 'false';
 process.env.ENABLE_HTTPS = 'false';
 // Teste jamais toca no hardware: sem isto a suite disputa o USB com o

@@ -14,6 +14,9 @@ const path = require('path');
 
 const UPLOADS = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-pipeline-'));
 process.env.UPLOADS_DIR = UPLOADS;
+// Sem moldura padrao: estes testes afirmam sobre a foto crua. A
+// moldura do projeto tem teste proprio.
+process.env.DEFAULT_FRAME = '/inexistente/sem-moldura.png';
 process.env.SAVE_TO_DOWNLOADS = 'false';
 
 const test = require('node:test');
