@@ -16,8 +16,20 @@
    pedir o cenário que quer:
 
      FAKE_SEM_CAMERA=1      --auto-detect não acha nada
+     FAKE_CAMERA_APOS=path  detecta só quando esse arquivo existir
+     FAKE_CAMERAS=json      lista de {modelo, porta} para autodetecção
+     FAKE_CAMERAS_FILE=path lê a lista de câmeras desse arquivo JSON
      FAKE_LIVE_FALHA=1      o live view morre sozinho após ~300ms
+     FAKE_LIVE_SEM_QUADROS=1 mantém o processo vivo sem enviar imagem
+     FAKE_LIVE_MUDO_ATE_RESET=path fica mudo até --reset criar o arquivo
+     FAKE_LIVE_ZERO_ATE_RESET=path encerra com 0 frames até o reset
+     FAKE_LIVE_TRAVA_APOS=n envia n quadros e congela sem sair
      FAKE_CAPTURA_FALHA=1   o disparo falha como se o USB estivesse preso
+     FAKE_CAPTURA_ARQUIVO=path copia um JPEG válido fornecido pelo teste
+     FAKE_SEM_FLASH=1       o corpo não expõe controle de flash interno
+     FAKE_FLASH_MARKER=path marca quando o flash foi levantado
+     FAKE_FLASH_COUNT_FILE=path conta cada comando de levantar o flash
+     FAKE_EXPOSURE_MARKER=path marca quando o modo P foi selecionado
      FAKE_FPS=n             quadros por segundo (padrão 20)
      FAKE_CAPTURA_MS=n      quanto o disparo demora (padrão 400)
    ══════════════════════════════════════════════════════════ */
@@ -32,18 +44,24 @@ const valor = flag => {
   return i >= 0 ? args[i + 1] : null;
 };
 
-const MODELO = 'Canon EOS Rebel T6';
+const MODELO = process.env.FAKE_MODELO || 'Canon EOS Rebel T6';
 
 /* ── --auto-detect ── */
 if (tem('--auto-detect')) {
-  if (process.env.FAKE_SEM_CAMERA) {
+  if (process.env.FAKE_SEM_CAMERA ||
+      (process.env.FAKE_CAMERA_APOS && !fs.existsSync(process.env.FAKE_CAMERA_APOS))) {
     process.stdout.write('Model                          Port\n----------------------------------------------------------\n');
     process.exit(0);
   }
+  const cameras = process.env.FAKE_CAMERAS_FILE
+    ? JSON.parse(fs.readFileSync(process.env.FAKE_CAMERAS_FILE, 'utf8'))
+    : process.env.FAKE_CAMERAS
+      ? JSON.parse(process.env.FAKE_CAMERAS)
+      : [{ modelo: MODELO, porta: 'usb:001,010' }];
   process.stdout.write(
     'Model                          Port\n' +
     '----------------------------------------------------------\n' +
-    `${MODELO}                usb:001,010\n`
+    cameras.map(item => `${item.modelo}                ${item.porta}`).join('\n') + '\n'
   );
   process.exit(0);
 }
@@ -59,6 +77,13 @@ if (tem('--abilities')) {
     '                                 : Preview\n' +
     'Configuration support            : yes\n'
   );
+  process.exit(0);
+}
+
+/* ── --reset ── */
+if (tem('--reset')) {
+  const marcador = process.env.FAKE_LIVE_MUDO_ATE_RESET || process.env.FAKE_LIVE_ZERO_ATE_RESET;
+  if (marcador) fs.writeFileSync(marcador, 'resetado');
   process.exit(0);
 }
 
@@ -84,15 +109,35 @@ function jpegFalso(marca = 0) {
 const CONFIG = {
   imagesize: 'Large',
   imagequality: 'Extra Fine',
+  imageformat: 'Large Fine JPEG',
   aspectratio: '3:2',
   iso: '800',
   'f-number': 'f/8',
+  aperture: '8',
   shutterspeed: '1/125',
   whitebalance: 'Daylight',
+  autoexposuremodedial: 'Auto',
 };
+
+const POPUP_FLASH = '/main/actions/popupflash';
+const FLASH_CARREGADO = '/main/settings/flashcharged';
+const flashSuportado = !process.env.FAKE_SEM_FLASH && /canon|eos/i.test(MODELO);
+
+function flashCarregado() {
+  if (process.env.FAKE_FLASH_MARKER) return fs.existsSync(process.env.FAKE_FLASH_MARKER) ? '1' : '0';
+  return process.env.FAKE_FLASH_CARREGADO === '1' ? '1' : '0';
+}
 
 if (tem('--get-config')) {
   const chave = valor('--get-config');
+  if (flashSuportado && chave === POPUP_FLASH) {
+    process.stdout.write('Label: Popup Flash\nReadonly: 0\nType: TOGGLE\nCurrent: 2\nEND\n');
+    process.exit(0);
+  }
+  if (flashSuportado && chave === FLASH_CARREGADO) {
+    process.stdout.write(`Label: Flash Charging State\nReadonly: 1\nType: TEXT\nCurrent: ${flashCarregado()}\nEND\n`);
+    process.exit(0);
+  }
   if (!(chave in CONFIG)) {
     process.stderr.write(`*** Error ***\nUnknown config name ${chave}\n`);
     process.exit(1);
@@ -104,13 +149,28 @@ if (tem('--get-config')) {
 }
 
 if (tem('--set-config')) {
-  const par = valor('--set-config') || '';
-  const chave = par.split('=')[0];
-  if (!(chave in CONFIG)) {
-    process.stderr.write(`*** Error ***\nUnknown config name ${chave}\n`);
-    process.exit(1);
+  const pares = args
+    .map((arg, index) => arg === '--set-config' ? args[index + 1] : null)
+    .filter(Boolean);
+
+  for (const par of pares) {
+    const [chave, valorNovo] = par.split('=');
+    if (flashSuportado && chave === POPUP_FLASH) {
+      if (process.env.FAKE_FLASH_MARKER) fs.writeFileSync(process.env.FAKE_FLASH_MARKER, 'levantado');
+      if (process.env.FAKE_FLASH_COUNT_FILE) fs.appendFileSync(process.env.FAKE_FLASH_COUNT_FILE, '1\n');
+      continue;
+    }
+    const nome = chave.split('/').pop();
+    if (!(nome in CONFIG)) {
+      process.stderr.write(`*** Error ***\nUnknown config name ${chave}\n`);
+      process.exit(1);
+    }
+    if (nome === 'autoexposuremodedial' && valorNovo === 'P' && process.env.FAKE_EXPOSURE_MARKER) {
+      fs.writeFileSync(process.env.FAKE_EXPOSURE_MARKER, 'P');
+    }
   }
-  process.exit(0);
+
+  if (!tem('--capture-image-and-download')) process.exit(0);
 }
 
 /* ── --capture-movie --stdout ── */
@@ -131,7 +191,24 @@ if (tem('--capture-movie')) {
     }, 300);
   }
 
+  if (process.env.FAKE_LIVE_ZERO_ATE_RESET && !fs.existsSync(process.env.FAKE_LIVE_ZERO_ATE_RESET)) {
+    setTimeout(() => {
+      process.stderr.write('Movie capture finished (0 frames)\n');
+      process.exit(0);
+    }, 100);
+    setInterval(() => {}, 1 << 30);
+    return;
+  }
+
+  if (process.env.FAKE_LIVE_SEM_QUADROS ||
+      (process.env.FAKE_LIVE_MUDO_ATE_RESET && !fs.existsSync(process.env.FAKE_LIVE_MUDO_ATE_RESET))) {
+    setInterval(() => {}, 1 << 30);
+    return;
+  }
+
   const timer = setInterval(() => {
+    const travaApos = Number(process.env.FAKE_LIVE_TRAVA_APOS || 0);
+    if (travaApos > 0 && n >= travaApos) return;
     const quadro = jpegFalso(n++);
     // Escreve em dois pedaços de propósito: no pipe real um quadro chega
     // picotado, e remontar isso é justamente o que o bridge precisa
@@ -158,8 +235,12 @@ else if (tem('--capture-image-and-download')) {
     const alvo = (valor('--filename') || 'captura.%C').replace('%C', 'jpg');
     fs.mkdirSync(path.dirname(alvo), { recursive: true });
 
-    // Um "arquivo grande" plausível, para o teste conferir bytes.
-    fs.writeFileSync(alvo, Buffer.concat([jpegFalso(255), Buffer.alloc(200_000, 0x7f)]));
+    if (process.env.FAKE_CAPTURA_ARQUIVO) {
+      fs.copyFileSync(process.env.FAKE_CAPTURA_ARQUIVO, alvo);
+    } else {
+      // Um "arquivo grande" plausível, para o teste conferir bytes.
+      fs.writeFileSync(alvo, Buffer.concat([jpegFalso(255), Buffer.alloc(200_000, 0x7f)]));
+    }
     process.stdout.write(`New file is in location ${alvo} on the camera\n`);
     process.exit(0);
   }, demora);

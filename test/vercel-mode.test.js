@@ -76,12 +76,33 @@ test('neste modo não existe banco em disco', () => {
   assert.equal(getRepo(), null, 'o teste não estaria exercitando o fallback');
 });
 
+test('o ambiente Vercel desliga câmera e preview mesmo com defaults locais', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = `
+    const { config } = require('./lib/config');
+    process.stdout.write(JSON.stringify(config.camera));
+  `;
+  const env = { ...process.env, VERCEL: '1' };
+  delete env.CAMERA_SOURCE;
+  delete env.PREVIEW_SOURCE;
+
+  const camera = JSON.parse(execFileSync(process.execPath, ['-e', script], {
+    cwd: path.join(__dirname, '..'),
+    env,
+    encoding: 'utf8',
+  }));
+
+  assert.equal(camera.fonte, 'nenhum');
+  assert.equal(camera.preview, 'nenhum');
+});
+
 test('a saúde diz que o estado é efêmero, sem fingir durabilidade', async () => {
   const saude = await (await fetch(`${base}/api/health`)).json();
 
   assert.equal(saude.ok, true);
   assert.match(saude.database, /ephemeral/, 'o modo serverless não deveria se declarar durável');
   assert.equal(saude.storage, 'ready');
+  assert.equal(saude.cloud, 'not-configured');
 });
 
 test('a foto atravessa o caminho inteiro sem banco', async () => {
@@ -180,6 +201,24 @@ test('na nuvem as telas do totem não são servidas', async () => {
     }
   } finally {
     await new Promise(r => nuvem.server.close(r));
+    require('../lib/config').config.isVercel = anterior;
+  }
+});
+
+test('na nuvem um QR recém-gerado espera o upload em vez de dar 404', async () => {
+  const anterior = require('../lib/config').config.isVercel;
+  require('../lib/config').config.isVercel = true;
+
+  try {
+    const id = '1700000000000_3x4_deadbeef';
+    const resp = await fetch(`${base}/photo/${id}`);
+    const html = await resp.text();
+
+    assert.equal(resp.status, 202);
+    assert.match(html, /Sua foto está chegando/);
+    assert.match(html, /http-equiv="refresh"/);
+    assert.equal((await fetch(`${base}/photo/id-invalido`)).status, 404);
+  } finally {
     require('../lib/config').config.isVercel = anterior;
   }
 });

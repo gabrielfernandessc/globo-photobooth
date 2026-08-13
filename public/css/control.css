@@ -14,10 +14,12 @@ html, body {
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  max-width: 420px;
-  margin: 0 auto;
   overflow: hidden;
 }
+
+#pairing-screen { max-width: 420px; margin: 0 auto; }
+#control-screen { width: 100%; max-width: none; background: var(--branco); }
+.embedded-control #btn-disconnect { display: none; }
 
 /* ════════════════════════════════
    PAIRING SCREEN
@@ -132,6 +134,49 @@ html, body {
   gap: var(--s12, 12px);
 }
 
+#panel-shoot { padding: clamp(16px, 2vw, 32px); }
+.operator-layout {
+  width: min(1400px, 100%);
+  height: 100%;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(480px, 1.4fr) minmax(320px, .8fr);
+  gap: clamp(20px, 3vw, 48px);
+  min-height: 0;
+}
+.operator-monitor,
+.operator-actions {
+  min-height: 0;
+  border: 1px solid var(--preto-5);
+  border-radius: var(--radius);
+  background: var(--branco);
+}
+.operator-monitor { display: flex; flex-direction: column; padding: 18px; gap: 12px; }
+.operator-monitor-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.operator-monitor-header strong { display: block; font-size: 18px; }
+.operator-monitor-header span { display: block; font-size: 13px; color: var(--preto-50); }
+.camera-live-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--preto-5);
+  color: var(--preto-50) !important;
+  white-space: nowrap;
+}
+.camera-live-badge.online { background: rgba(0,168,107,.1); color: #007a4e !important; }
+.operator-preview-frame {
+  position: relative;
+  flex: 1;
+  min-height: 280px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--preto-5);
+}
+#control-preview { width: 100%; height: 100%; object-fit: contain; background: var(--preto-5); }
+.operator-preview-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--preto-50); font-size: 16px; }
+.operator-preview-empty[hidden] { display: none; }
+.operator-camera-state { color: var(--preto-50); font-size: 13px; }
+.operator-actions { padding: clamp(18px, 2.5vw, 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+
 /* ════════════════════════════════
    SHOOT TAB
    ════════════════════════════════ */
@@ -139,12 +184,17 @@ html, body {
 /* Capture button row */
 .capture-row {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   justify-content: center;
-  padding: var(--s8) 0 var(--s4);
+  padding: 4px 0;
 }
+.capture-row strong { font-size: 18px; }
+.capture-row span { font-size: 12px; color: var(--preto-50); }
 
 .capture-btn {
-  width: 72px; height: 72px;
+  width: 96px; height: 96px;
   border-radius: 50%;
   border: 4px solid var(--azul);
   background: transparent;
@@ -197,6 +247,10 @@ html, body {
 .pill:hover { border-color: var(--azul); color: var(--preto); }
 .pill.active { background: var(--azul); border-color: var(--azul); color: var(--branco); }
 .pill.has-frame { border-color: #00A86B; border-style: solid; color: #00A86B; background: rgba(0,168,107,.05); }
+.pill:disabled { opacity: .55; cursor: wait; }
+.flash-control-status { min-height: 17px; color: var(--preto-50); font-size: 11px; line-height: 1.45; }
+.flash-control-status.error { color: var(--vermelho); }
+.flash-control-status.ready { color: #007a4e; }
 
 /* ════════════════════════════════
    GALLERY TAB
@@ -210,8 +264,10 @@ html, body {
 }
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  width: min(1400px, 100%);
+  margin: 0 auto;
 }
 .no-photos {
   grid-column: 1/-1;
@@ -227,12 +283,25 @@ html, body {
   cursor: pointer;
   border: 2px solid transparent;
   transition: border-color .15s;
+  padding: 0;
+  background: var(--preto-5);
+  font-family: inherit;
 }
 .gallery-thumb:active { border-color: var(--azul); }
 .gallery-thumb img {
   width: 100%; height: 100%;
   object-fit: cover;
   display: block;
+}
+.gallery-action {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.66);
+  color: #fff;
+  font-size: 11px;
 }
 
 /* ════════════════════════════════
@@ -243,6 +312,19 @@ html, body {
   font-size: 12px;
   color: var(--preto-50);
   text-align: center;
+}
+
+.camera-desktop-card { width: min(760px, 100%); margin: 0 auto; }
+.camera-profile-note { font-size: 14px; color: var(--preto-50); line-height: 1.5; }
+.camera-profile-actions { display: flex; gap: 12px; margin-top: 16px; }
+.camera-profile-actions .btn { flex: 1; }
+.camera-profile-status { min-height: 24px; margin-top: 12px; color: var(--preto-50); font-size: 13px; }
+
+@media (max-width: 820px) {
+  .operator-layout { grid-template-columns: 1fr; overflow-y: auto; }
+  .operator-monitor { min-height: 430px; }
+  .operator-actions { overflow: visible; }
+  .gallery-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* ── Sony section header ── */

@@ -32,6 +32,8 @@
   const el = {
     preview: $('preview'),
     molduraPreview: $('molduraPreview'),
+    palcoPreview: $('palcoPreview'),
+    semSinal: $('semSinal'),
     numero: $('numero'),
     fotoFinal: $('fotoFinal'),
     celebracao: $('celebracao'),
@@ -40,6 +42,8 @@
     chamada: $('chamada'),
     flash: $('flash'),
     tempo: $('tempoRestante'),
+    tituloCamera: $('tituloCamera'),
+    mensagemCamera: $('mensagemCamera'),
     detalheCamera: $('detalheCamera'),
     mensagemErro: $('mensagemErro'),
     diagnostico: $('diagnostico'),
@@ -47,13 +51,21 @@
 
   const cfg = window.__BOOTH__ || {};
   const SESSAO = 'TOTM';
+  const previewViewerKey = 'globo-booth-display-preview-viewer';
+  const previewViewerId = sessionStorage.getItem(previewViewerKey) ||
+    (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+  sessionStorage.setItem(previewViewerKey, previewViewerId);
 
   const estado = {
     atual: 'BOOTING',
     contagemSegundos: 3,
     ultimaFoto: null,
     temporizador: null,
+    temporizadorPreview: null,
+    preparacaoDisparo: null,
+    requestId: null,
     camera: null,
+    aspectRatio: '3:4',
     // null = não está na galeria; número = índice da foto revisitada
     galeria: null,
   };
@@ -71,7 +83,8 @@
 
     estado.atual = novo;
     for (const [nome, cena] of cenas) {
-      cena.toggleAttribute('data-ativa', nome === novo);
+      const manterPreview = novo === 'CONTAGEM' && nome === 'PRONTO';
+      cena.toggleAttribute('data-ativa', nome === novo || manterPreview);
     }
 
     el.chamada.hidden = novo !== 'PRONTO';
@@ -79,27 +92,36 @@
 
     atualizarDiagnostico();
     aoEntrar[novo]?.(dados);
+    socket?.emit('display-state', { code: SESSAO, state: novo });
   }
 
   const aoEntrar = {
     PRONTO() {
-      // Reconecta o stream MJPEG. Trocar o src força o navegador a abrir
-      // uma requisição nova — é o que traz o preview de volta depois de
-      // cada captura, sem precisar recarregar a página.
+      // A conexão é aberta uma vez e permanece viva entre fotos. O
+      // último quadro continua visível enquanto a câmera usa o USB.
       ligarPreview();
       // Some com a foto anterior: resultado velho na tela durante a
       // captura nova é o defeito mais confuso que um totem pode ter.
       el.fotoFinal.removeAttribute('src');
     },
 
-    CONTAGEM() {
-      let restam = estado.contagemSegundos;
+    SEM_CAMERA() {
+      desligarPreview();
+    },
+
+    CONTAGEM({ timer, requestId } = {}) {
+      let restam = Number(timer) || estado.contagemSegundos;
       el.numero.textContent = restam;
+      estado.preparacaoDisparo = null;
+      estado.requestId = requestId || null;
+
+      if (restam === 1) prepararDisparo();
 
       const passo = () => {
         restam--;
         if (restam > 0) {
           el.numero.textContent = restam;
+          if (restam === 1) prepararDisparo();
           // Reinicia a animação do número.
           el.numero.style.animation = 'none';
           void el.numero.offsetWidth;
@@ -153,53 +175,203 @@
 
   /* ── Preview ──────────────────────────────────────────── */
 
-  function ligarPreview() {
+  function ligarPreview({ forcar = false } = {}) {
     const caminho = cfg.preview?.streamPath;
     if (!caminho) return; // modo 'nenhum' ou 'capturadora'
-    // O parâmetro só existe para o navegador não reaproveitar a conexão
-    // anterior, que já foi encerrada pelo servidor durante a captura.
-    el.preview.src = `${caminho}?t=${Date.now()}`;
+    if (!forcar && el.preview.getAttribute('src')) return;
+    clearTimeout(estado.temporizadorPreview);
+    estado.temporizadorPreview = null;
+
+    /* "Aguardando a câmera" some quando o primeiro quadro pinta. Uma
+       <img> de MJPEG dispara onload no primeiro quadro e nunca mais, e
+       é o único aviso que existe de que a imagem está viva. */
+    if (el.semSinal) el.semSinal.hidden = false;
+    el.preview.onload = () => { if (el.semSinal) el.semSinal.hidden = true; };
+
+    el.preview.src = `${caminho}?viewer=${encodeURIComponent(previewViewerId)}&t=${Date.now()}`;
+  }
+
+  /**
+   * Encaixa o preview na janela real da moldura.
+   *
+   * Sem isto o convidado se posiciona olhando um retângulo cheio e
+   * recebe uma foto recortada noutro lugar — exatamente o problema que
+   * a janela recortada existe para evitar. A geometria vem do servidor,
+   * medida no canal alpha da mesma arte que a composição usa, então
+   * preview e foto final concordam por construção.
+   *
+   * Falhar aqui é aceitável: sem a arte por cima o preview aparece
+   * igual, só sem a referência de enquadramento.
+   */
+  async function montarMolduraDoPreview() {
+    if (!el.palcoPreview || !el.molduraPreview) return;
+
+    try {
+      const g = await (await fetch(`/api/frame/${SESSAO}/geometria`)).json();
+      if (!g.temMoldura || !g.janela) return;
+
+      const raiz = document.documentElement.style;
+      raiz.setProperty('--moldura-proporcao', `${g.moldura.largura} / ${g.moldura.altura}`);
+      raiz.setProperty('--janela-x', `${(g.janela.esquerda * 100).toFixed(3)}%`);
+      raiz.setProperty('--janela-y', `${(g.janela.topo * 100).toFixed(3)}%`);
+      raiz.setProperty('--janela-w', `${(g.janela.largura * 100).toFixed(3)}%`);
+      raiz.setProperty('--janela-h', `${(g.janela.altura * 100).toFixed(3)}%`);
+
+      el.molduraPreview.src = `${g.frameUrl}&t=${Date.now()}`;
+      el.molduraPreview.hidden = false;
+    } catch (erro) {
+      console.warn('moldura do preview indisponível', erro);
+    }
   }
 
   function desligarPreview() {
-    // Solta a conexão MJPEG antes do disparo: a câmera precisa do USB
-    // livre, e um stream pendurado atrasa a troca de mãos.
-    el.preview.removeAttribute('src');
+    // O stream é entre servidor e tela, não ocupa o USB da câmera. Deixá-lo
+    // vivo preserva o último quadro e elimina o clarão entre estados.
+    clearTimeout(estado.temporizadorPreview);
+    estado.temporizadorPreview = null;
   }
 
   /* ── Disparo ──────────────────────────────────────────── */
 
   let disparando = false;
+  let sequenciaDisparo = 0;
+  const capturasSocketPendentes = new Map();
+
+  function novoRequestId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  function cancelarCapturaLocal() {
+    sequenciaDisparo++;
+    disparando = false;
+    estado.preparacaoDisparo = null;
+    estado.requestId = null;
+    for (const concluir of capturasSocketPendentes.values()) {
+      concluir({ success: false, error: 'Captura cancelada pelo operador' });
+    }
+    capturasSocketPendentes.clear();
+  }
+
+  function capturarPeloSocket(payload) {
+    return new Promise((resolve, reject) => {
+      if (!socket?.connected) return reject(new Error('Socket do telão desconectado'));
+
+      let terminou = false;
+      const concluir = resultado => {
+        if (terminou) return;
+        terminou = true;
+        clearTimeout(limite);
+        capturasSocketPendentes.delete(payload.requestId);
+        resolve(resultado);
+      };
+      const limite = setTimeout(() => {
+        if (terminou) return;
+        terminou = true;
+        capturasSocketPendentes.delete(payload.requestId);
+        reject(new Error('O disparo não foi confirmado pelo socket'));
+      }, 15_000);
+
+      capturasSocketPendentes.set(payload.requestId, concluir);
+      socket.emit('dslr-capture', payload, concluir);
+    });
+  }
+
+  async function capturarPorHttp(payload) {
+    const controlador = new AbortController();
+    const limite = setTimeout(() => controlador.abort(), 30_000);
+    try {
+      const resposta = await fetch('/api/capture', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controlador.signal,
+      });
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error || `HTTP ${resposta.status}`);
+      return corpo;
+    } catch (erro) {
+      if (erro.name === 'AbortError') throw new Error('A captura excedeu o limite de 30 segundos');
+      throw erro;
+    } finally {
+      clearTimeout(limite);
+    }
+  }
+
+  async function solicitarCaptura(payload) {
+    try {
+      return await capturarPeloSocket(payload);
+    } catch (erroSocket) {
+      console.warn('socket de captura falhou; usando HTTP com timeout', erroSocket);
+      return capturarPorHttp(payload);
+    }
+  }
+
+  function prepararDisparo() {
+    if (estado.preparacaoDisparo) return estado.preparacaoDisparo;
+
+    estado.preparacaoDisparo = fetch('/api/camera/prepare', { method: 'POST' })
+      .then(async resposta => {
+        if (resposta.ok) return resposta.json();
+        const corpo = await resposta.json().catch(() => ({}));
+        throw new Error(corpo.error || `HTTP ${resposta.status}`);
+      })
+      .catch(erro => {
+        // /api/capture mantém o caminho seguro sem preparo. Não cancela
+        // a foto por uma otimização que falhou.
+        console.warn('pré-armação da câmera indisponível', erro);
+        return null;
+      });
+
+    return estado.preparacaoDisparo;
+  }
 
   async function disparar() {
     if (disparando) return;
     disparando = true;
+    const minhaSequencia = ++sequenciaDisparo;
+    estado.requestId ||= novoRequestId();
 
+    // A preparação é uma otimização, nunca uma etapa visual. Se a
+    // câmera demorar para soltar o live view, ela continua em paralelo;
+    // a contagem não pode congelar no número 1 esperando USB/PTP.
+    if (!estado.preparacaoDisparo) prepararDisparo();
     ir('CAPTURANDO');
     desligarPreview();
 
     try {
-      // O servidor conduz obturador, moldura e gravação. Demora segundos
-      // numa DSLR, e é por isso que a tela avisa em vez de parecer travada.
-      const resposta = await fetch('/api/capture', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ aspectRatio: '3:4' }),
+      // “Sorria!” marca o clique, não a transferência USB inteira. O
+      // JPEG ainda pode levar segundos para chegar, mas a tela muda para
+      // “Revelando” logo depois do obturador.
+      const requisicao = solicitarCaptura({
+        code: SESSAO,
+        aspectRatio: estado.aspectRatio,
+        requestId: estado.requestId,
       });
+      estado.temporizador = setTimeout(() => {
+        if (estado.atual === 'CAPTURANDO') ir('PROCESSANDO');
+      }, 700);
 
-      // A tela de "revelando" entra assim que o obturador solta.
+      const corpo = await requisicao;
+      if (minhaSequencia !== sequenciaDisparo) return;
+
+      // Resposta muito rápida também respeita a máquina de estados.
       if (estado.atual === 'CAPTURANDO') ir('PROCESSANDO');
 
-      const corpo = await resposta.json();
-      if (!resposta.ok || !corpo.success) throw new Error(corpo.error || `HTTP ${resposta.status}`);
+      if (!corpo.success) throw new Error(corpo.error || 'A câmera não concluiu a foto');
 
       estado.ultimaFoto = corpo.data;
       ir('RESULTADO', { foto: corpo.data });
     } catch (erro) {
+      if (minhaSequencia !== sequenciaDisparo) return;
       console.error('captura falhou', erro);
       ir('ERRO', { mensagem: mensagemAmigavel(erro.message) });
     } finally {
+      if (minhaSequencia !== sequenciaDisparo) return;
       disparando = false;
+      estado.preparacaoDisparo = null;
+      estado.requestId = null;
     }
   }
 
@@ -264,12 +436,13 @@
   /* ── Gatilhos ─────────────────────────────────────────── */
 
   function podeFotografar() {
-    return !!estado.camera?.transmitindo || cfg.preview?.fonte === 'nenhum';
+    return !!estado.camera?.transmitindo;
   }
 
-  function pedirFoto() {
-    if (estado.atual !== 'PRONTO') return;
-    ir('CONTAGEM');
+  function pedirFoto(timer, requestId) {
+    if (estado.atual !== 'PRONTO' || !podeFotografar()) return;
+    estado.galeria = null;
+    ir('CONTAGEM', { timer, requestId });
   }
 
   /* ── Galeria ──────────────────────────────────────────
@@ -309,13 +482,6 @@
     }
   }
 
-  document.addEventListener('click', () => {
-    // Da galeria, o toque volta ao preview em vez de disparar: o
-    // convidado seguinte não deve fotografar por engano ao encostar.
-    if (estado.galeria !== null) { estado.galeria = null; ir('PRONTO'); return; }
-    pedirFoto();
-  });
-
   document.addEventListener('keydown', evento => {
     if (evento.key === 'ArrowLeft' || evento.key === 'ArrowRight') {
       evento.preventDefault();
@@ -323,12 +489,6 @@
       return;
     }
 
-    if (evento.code === 'Space' || evento.code === 'Enter') {
-      evento.preventDefault();
-      if (estado.galeria !== null) { estado.galeria = null; ir('PRONTO'); return; }
-      pedirFoto();
-      return;
-    }
     if (evento.key === 'd' || evento.key === 'D') {
       el.diagnostico.toggleAttribute('data-visivel');
       atualizarDiagnostico();
@@ -352,25 +512,28 @@
         ? `${status.modelo} — ${status.estado}`
         : status.erro || 'procurando câmera…';
 
+      if (status.conflitoSony) {
+        el.tituloCamera.textContent = 'Sony Imaging Edge está bloqueando a câmera';
+        el.mensagemCamera.textContent = 'Desative “Sony CameraExt” em Ajustes do Sistema › Geral › Itens de Início e Extensões › Extensões de Câmera.';
+      } else if (status.modelo && !status.transmitindo) {
+        el.tituloCamera.textContent = 'Reconectando a imagem';
+        el.mensagemCamera.textContent = 'A câmera está conectada. Aguarde o preview voltar antes da próxima foto.';
+      } else {
+        el.tituloCamera.textContent = 'Câmera desconectada';
+        el.mensagemCamera.innerHTML = 'Confira o cabo USB e se a câmera está ligada.<br>O totem religa sozinho assim que ela voltar.';
+      }
+
       // Só troca de cena em estados de espera: interromper uma contagem
       // ou um resultado por causa de um poll seria pior que o problema.
       const emEspera = ['BOOTING', 'SEM_CAMERA', 'PRONTO'].includes(estado.atual);
       if (!emEspera) return;
 
-      /* O que decide se dá para fotografar é a CÂMERA ESTAR CONECTADA,
-         não o preview estar fluindo.
-
-         A Sony hiberna o live view depois de alguns minutos parada, mas
-         continua respondendo ao disparo — ela acorda para fotografar.
-         Exigir preview fazia o totem se declarar fora do ar numa fila
-         que só precisava de alguém apertar o botão.
-
-         Sem preview a cena PRONTO mostra a chamada e o convidado se
-         posiciona pela marca no chão. Menos confortável, e infinitamente
-         melhor que um totem que se recusa a trabalhar. */
-      const podeUsar = !!status.modelo && status.estado !== 'falha';
+      // Reconhecer o corpo sem receber quadros não basta: mostrar uma
+      // tela vazia como se estivesse pronta induz o operador ao erro.
+      const podeUsar = !!status.transmitindo;
+      const transicaoEsperada = ['preparando', 'disparando', 'religando'].includes(status.estado);
       if (podeUsar && estado.atual !== 'PRONTO') ir('PRONTO');
-      else if (!podeUsar && estado.atual === 'PRONTO') ir('SEM_CAMERA');
+      else if (!podeUsar && !transicaoEsperada && estado.atual === 'PRONTO') ir('SEM_CAMERA');
       else if (estado.atual === 'BOOTING') ir('SEM_CAMERA');
     } catch (erro) {
       console.warn('status da câmera indisponível', erro);
@@ -395,8 +558,38 @@
 
   /* ── Publicação: o QR pode virar online depois de exibido ── */
 
+  let socket = null;
+
+  function fotoRevisitada(foto) {
+    const alvo = foto.publicUrl || foto.share?.publicUrl || `${location.origin}${foto.page || foto.pageUrl}`;
+    estado.galeria = 0;
+    ir('RESULTADO', {
+      forcar: true,
+      deVolta: true,
+      foto: {
+        imageUrl: foto.url || foto.imageUrl,
+        qrUrl: `/api/qr?size=520&data=${encodeURIComponent(alvo)}`,
+        share: { status: foto.publicUrl || foto.share?.publicUrl ? 'published' : 'local' },
+        pageUrl: foto.page || foto.pageUrl,
+      },
+      posicao: 'Foto recuperada',
+    });
+  }
+
   if (window.io) {
-    const socket = window.io({ path: cfg.socketPath || '/socket.io' });
+    socket = window.io({ path: cfg.socketPath || '/socket.io' });
+
+    const entrarNaSessao = () => {
+      socket.emit('create-session', { requestedCode: SESSAO }, resposta => {
+        if (resposta?.settings) {
+          estado.contagemSegundos = Number(resposta.settings.timer) || 3;
+          estado.aspectRatio = resposta.settings.aspectRatio || '3:4';
+        }
+        socket.emit('display-state', { code: SESSAO, state: estado.atual });
+      });
+    };
+
+    socket.on('connect', entrarNaSessao);
 
     socket.on('share-status', ({ photoId, status, publicUrl }) => {
       const atual = estado.ultimaFoto;
@@ -412,10 +605,41 @@
     });
 
     socket.on('camera-estado', () => sincronizarCamera());
+    socket.on('dslr-capture-result', ({ requestId, resultado } = {}) => {
+      capturasSocketPendentes.get(requestId)?.(resultado);
+    });
+    socket.on('controller-connected', () => {
+      socket.emit('display-state', { code: SESSAO, state: estado.atual });
+    });
+    socket.on('start-countdown', ({ timer, requestId } = {}) => pedirFoto(timer, requestId));
+    socket.on('settings-updated', settings => {
+      estado.contagemSegundos = Number(settings?.timer) || estado.contagemSegundos;
+      estado.aspectRatio = settings?.aspectRatio || estado.aspectRatio;
+    });
+    socket.on('show-photo', ({ photo } = {}) => { if (photo) fotoRevisitada(photo); });
+    socket.on('reset-to-preview', () => {
+      cancelarCapturaLocal();
+      estado.galeria = null;
+      ir(podeFotografar() ? 'PRONTO' : 'SEM_CAMERA', { forcar: true });
+    });
   }
+
+  el.preview.addEventListener('error', () => {
+    el.preview.removeAttribute('src');
+    if (['PRONTO', 'CONTAGEM'].includes(estado.atual)) {
+      clearTimeout(estado.temporizadorPreview);
+      estado.temporizadorPreview = setTimeout(() => ligarPreview({ forcar: true }), 250);
+    }
+  });
+
+  el.preview.addEventListener('load', () => {
+    clearTimeout(estado.temporizadorPreview);
+    estado.temporizadorPreview = null;
+  });
 
   /* ── Boot ─────────────────────────────────────────────── */
 
+  montarMolduraDoPreview();
   sincronizarCamera();
   setInterval(sincronizarCamera, 2500);
 

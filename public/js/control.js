@@ -1,92 +1,77 @@
 /* ══════════════════════════════════════════════════════════
-   CONTROL.JS — controle remoto
+   PAINEL DO OPERADOR — tela 1
 
-   Dispara a foto, ajusta a sessão e — quando há um celular pareado
-   como câmera — controla o sensor dele de verdade (lanterna, foco,
-   zoom, exposição) por relay via Socket.IO.
+   O operador conduz a sessão daqui. O telão nunca inicia uma foto:
+   ele só mostra preview, contagem, resultado e QR.
    ══════════════════════════════════════════════════════════ */
 
 (() => {
   'use strict';
 
   const $ = id => document.getElementById(id);
+  const BOOTH = window.__BOOTH__ || {};
+  const params = new URLSearchParams(location.search);
+  const codeFromUrl = params.get('code')?.toUpperCase() || null;
+  const embedded = params.get('embedded') === '1';
 
-  /* ── Pareamento ── */
   const pairingScreen = $('pairing-screen');
   const controlScreen = $('control-screen');
-  const digits        = Array.from(document.querySelectorAll('.code-inputs input'));
-  const btnConnect    = $('btn-connect');
-  const pairError     = $('pair-error');
-
-  /* ── Header ── */
-  const ctrlDot       = $('ctrl-dot');
+  const digits = [...document.querySelectorAll('.code-inputs input')];
+  const btnConnect = $('btn-connect');
+  const pairError = $('pair-error');
+  const ctrlDot = $('ctrl-dot');
   const ctrlStatusTxt = $('ctrl-status-text');
-  const ctrlCount     = $('ctrl-count');
+  const ctrlCount = $('ctrl-count');
   const btnDisconnect = $('btn-disconnect');
-
-  /* ── Tabs ── */
-  const tabs   = document.querySelectorAll('.tab');
-  const panels = document.querySelectorAll('.tab-panel');
-
-  /* ── Disparo ── */
-  const sourceHint  = $('source-hint');
-  const captureBtn  = $('capture-btn');
-  const btnNext     = $('btn-next');
-  const timerPills  = document.querySelectorAll('[data-timer]');
-  const ratioPills  = document.querySelectorAll('[data-ratio]:not(.frame-btn)');
+  const captureBtn = $('capture-btn');
+  const captureLabel = $('capture-label');
+  const btnNext = $('btn-next');
+  const sourceHint = $('source-hint');
+  const displayStateEl = $('display-state');
+  const cameraBadge = $('camera-live-badge');
+  const controlPreview = $('control-preview');
+  const controlPreviewEmpty = $('control-preview-empty');
+  const operatorCameraState = $('operator-camera-state');
+  const timerPills = [...document.querySelectorAll('[data-timer]')];
+  const ratioPills = [...document.querySelectorAll('[data-ratio]:not(.frame-btn)')];
+  const flashPills = [...document.querySelectorAll('[data-flash]')];
+  const flashControlStatus = $('flash-control-status');
   const btnFrame3x4 = $('btn-frame-3x4');
   const btnFrame4x3 = $('btn-frame-4x3');
-  const frameInput  = $('frame-input');
-
-  /* ── Galeria ── */
+  const frameInput = $('frame-input');
   const galleryGrid = $('gallery-grid');
-  const noPhotos    = $('no-photos');
+  const noPhotos = $('no-photos');
+  const cameraModel = $('camera-model');
+  const cameraDetail = $('camera-detail');
+  const btnSaveProfile = $('btn-save-profile');
+  const btnApplyProfile = $('btn-apply-profile');
+  const cameraProfileStatus = $('camera-profile-status');
+  const tabs = [...document.querySelectorAll('.tab')];
+  const panels = [...document.querySelectorAll('.tab-panel')];
 
-  /* ── Celular-câmera ── */
-  const phoneSection   = $('phone-section');
-  const phoneName      = $('phone-name');
-  const phoneSub       = $('phone-sub');
-  const phoneCaps      = $('phone-caps');
-  const camDivider     = $('cam-divider');
-  const cssHint        = $('css-hint');
-  const btnTorch       = $('btn-torch');
-  const btnAutofocus   = $('btn-autofocus');
-  const ctrlPhoneZoom  = $('ctrl-phone-zoom');
-  const valPhoneZoom   = $('val-phone-zoom');
-  const ctrlPhoneEv    = $('ctrl-phone-ev');
-  const valPhoneEv     = $('val-phone-ev');
-  const btnPhoneMirror = $('btn-phone-mirror');
-  const ctrlLead       = $('ctrl-lead');
-  const valLead        = $('val-lead');
-
-  /* ── Filtros do preview do totem ── */
-  const ctrlBrightness = $('ctrl-brightness');
-  const ctrlContrast   = $('ctrl-contrast');
-  const ctrlSaturation = $('ctrl-saturation');
-  const ctrlPreviewW   = $('ctrl-preview-w');
-  const ctrlPreviewH   = $('ctrl-preview-h');
-  const ctrlZoom       = $('ctrl-zoom');
-  const valBrightness  = $('val-brightness');
-  const valContrast    = $('val-contrast');
-  const valSaturation  = $('val-saturation');
-  const valPreviewW    = $('val-preview-w');
-  const valPreviewH    = $('val-preview-h');
-  const valZoom        = $('val-zoom');
-  const btnResetCam    = $('btn-reset-cam');
-
-  /* ── Estado ── */
-  let sessionCode   = null;
+  let sessionCode = null;
   let selectedTimer = 3;
   let selectedRatio = '3:4';
+  let selectedFlashMode = 'off';
+  let flashBusy = false;
   let pendingFrameRatio = null;
-  let capturing   = false;
-  let torchOn     = false;
-  let phoneMirror = false;
-  let hasCamera   = false;
+  let capturing = false;
+  let displayOnline = false;
+  let displayState = 'BOOTING';
+  let cameraStatus = null;
+  let releaseTimer = null;
+  let previewRetry = null;
+  let joinRetry = null;
+  let desiredCode = null;
+  let joining = false;
 
-  /* Caminho e transporte vêm de /api/config.js: na Vercel o Socket.IO
-     roda sob /api/server e só com WebSocket. */
-  const BOOTH = window.__BOOTH__ || {};
+  const previewViewerKey = 'globo-booth-control-preview-viewer';
+  const previewViewerId = sessionStorage.getItem(previewViewerKey) ||
+    (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+  sessionStorage.setItem(previewViewerKey, previewViewerId);
+
+  if (embedded) document.body.classList.add('embedded-control');
+
   const socket = io({
     path: BOOTH.socketPath || '/socket.io',
     transports: BOOTH.transports || ['polling', 'websocket'],
@@ -96,433 +81,376 @@
     reconnectionAttempts: Infinity,
   });
 
-  /* ═══════════════════════════════════════════════════════
-     PAREAMENTO
-     ═══════════════════════════════════════════════════════ */
-
-  digits.forEach((input, i) => {
-    input.addEventListener('input', () => {
-      input.value = input.value.slice(-1).toUpperCase();
-      if (input.value && i < digits.length - 1) digits[i + 1].focus();
-      checkReady();
-    });
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Backspace' && !input.value && i > 0) {
-        digits[i - 1].value = '';
-        digits[i - 1].focus();
-        checkReady();
-      }
-    });
-  });
-
-  function checkReady() {
-    btnConnect.disabled = !digits.every(d => d.value.length === 1);
-    digits.forEach(d => d.classList.toggle('filled', d.value.length === 1));
+  function cameraReady() {
+    return !!cameraStatus?.transmitindo;
   }
 
-  btnConnect.addEventListener('click', () => {
-    btnConnect.disabled = true;
-    pairError.classList.add('hidden');
-    join(digits.map(d => d.value).join('').toUpperCase(), true);
-  });
+  function updateAvailability() {
+    const socketOnline = socket.connected && !!sessionCode;
+    const pronta = socketOnline && displayOnline && cameraReady() && displayState === 'PRONTO' && !capturing;
+
+    ctrlDot.classList.toggle('connected', socketOnline && displayOnline);
+    ctrlStatusTxt.textContent = !socketOnline
+      ? 'Servidor desconectado'
+      : displayOnline ? 'Telão conectado' : 'Telão desconectado';
+
+    captureBtn.disabled = !pronta;
+    captureLabel.textContent = capturing
+      ? 'Foto em andamento…'
+      : pronta ? 'Tirar foto' : cameraReady() ? 'Aguardando o telão' : 'Aguardando a câmera';
+
+    cameraBadge.textContent = cameraReady() ? 'Ao vivo' : 'Sem imagem';
+    cameraBadge.classList.toggle('online', cameraReady());
+    btnNext.disabled = !socketOnline || !displayOnline;
+    flashPills.forEach(pill => {
+      pill.disabled = flashBusy || capturing || !socketOnline;
+    });
+  }
+
+  function applySettings(settings = {}) {
+    if (settings.timer) {
+      selectedTimer = Number(settings.timer);
+      timerPills.forEach(pill => pill.classList.toggle('active', Number(pill.dataset.timer) === selectedTimer));
+    }
+    if (settings.aspectRatio) {
+      selectedRatio = settings.aspectRatio;
+      ratioPills.forEach(pill => pill.classList.toggle('active', pill.dataset.ratio === selectedRatio));
+    }
+    if (settings.flashMode) {
+      selectedFlashMode = settings.flashMode === 'flash' ? 'flash' : 'off';
+      flashPills.forEach(pill => pill.classList.toggle('active', pill.dataset.flash === selectedFlashMode));
+      if (!flashBusy) {
+        flashControlStatus.textContent = selectedFlashMode === 'flash'
+          ? 'Flash ativo: a câmera o levanta antes de cada foto.'
+          : 'Flash desligado.';
+        flashControlStatus.className = 'flash-control-status';
+      }
+    }
+  }
+
+  function applySnapshot(snapshot = {}) {
+    applySettings(snapshot.settings);
+    if (snapshot.photoCount !== undefined) ctrlCount.textContent = `${snapshot.photoCount} fotos`;
+    if (snapshot.hasFrame3x4) markFrame(btnFrame3x4);
+    if (snapshot.hasFrame4x3) markFrame(btnFrame4x3);
+    displayOnline = !!snapshot.hasDisplay;
+    if (snapshot.cameraStatus) applyCameraStatus(snapshot.cameraStatus);
+    updateAvailability();
+  }
 
   function join(code, interactive) {
-    socket.emit('join-session', { code, role: 'control' }, res => {
-      if (!res?.success) {
-        if (interactive) {
-          pairError.textContent = res?.error || 'Código inválido.';
+    desiredCode = code;
+    if (joining || !socket.connected) return;
+    joining = true;
+    clearTimeout(joinRetry);
+    socket.emit('join-session', { code, role: 'control' }, response => {
+      joining = false;
+      if (!response?.success) {
+        if (interactive || embedded) {
+          pairError.textContent = response?.error || 'Código inválido.';
           pairError.classList.remove('hidden');
           btnConnect.disabled = false;
-          digits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
-          digits[0].focus();
-        } else {
-          localStorage.removeItem('globo-booth-ctrl-code');
-          sessionCode = null;
+        }
+        if (!interactive && desiredCode === code) {
+          joinRetry = setTimeout(() => join(code, false), 750);
         }
         return;
       }
 
+      clearTimeout(joinRetry);
       sessionCode = code;
       localStorage.setItem('globo-booth-ctrl-code', code);
       pairingScreen.classList.add('hidden');
       controlScreen.classList.remove('hidden');
-      setStatus(true);
-      applySnapshot(res);
+      applySnapshot(response);
+      refreshCamera();
     });
   }
 
-  (function autoReconnect() {
-    const saved = localStorage.getItem('globo-booth-ctrl-code');
-    if (saved) join(saved, false);
-  })();
-
-  socket.on('connect', () => { if (sessionCode) join(sessionCode, false); });
-
-  btnDisconnect?.addEventListener('click', () => {
-    localStorage.removeItem('globo-booth-ctrl-code');
-    sessionCode = null;
-    galleryGrid.querySelectorAll('.gallery-thumb').forEach(el => el.remove());
-    noPhotos.style.display = '';
-    controlScreen.classList.add('hidden');
-    pairingScreen.classList.remove('hidden');
-    digits.forEach(d => { d.value = ''; d.classList.remove('filled'); });
-    digits[0].focus();
-    setStatus(false);
+  digits.forEach((input, index) => {
+    input.addEventListener('input', () => {
+      input.value = input.value.slice(-1).toUpperCase();
+      if (input.value && index < digits.length - 1) digits[index + 1].focus();
+      btnConnect.disabled = !digits.every(digit => digit.value.length === 1);
+    });
   });
 
-  /* ═══════════════════════════════════════════════════════
-     ESTADO DA SESSÃO
-     ═══════════════════════════════════════════════════════ */
+  btnConnect.addEventListener('click', () => {
+    pairError.classList.add('hidden');
+    join(digits.map(digit => digit.value).join('').toUpperCase(), true);
+  });
 
-  function applySnapshot(snapshot = {}) {
-    if (snapshot.settings) applySettings(snapshot.settings);
-    if (snapshot.photoCount !== undefined) ctrlCount.textContent = `${snapshot.photoCount} fotos`;
-    if (snapshot.hasFrame3x4) markFrame(btnFrame3x4);
-    if (snapshot.hasFrame4x3) markFrame(btnFrame4x3);
-    hasCamera = !!snapshot.hasCamera;
-    updateSource(snapshot.cameraInfo);
-  }
+  const initialCode = codeFromUrl || localStorage.getItem('globo-booth-ctrl-code');
+  if (initialCode) desiredCode = initialCode;
 
+  socket.on('connect', () => {
+    joining = false;
+    if (sessionCode || desiredCode) join(sessionCode || desiredCode, false);
+  });
+  socket.on('disconnect', () => { joining = false; updateAvailability(); });
   socket.on('presence', applySnapshot);
-  socket.on('camera-state', ({ state }) => { hasCamera = true; updateSource(state); });
-  socket.on('camera-connected', ({ info }) => { hasCamera = true; updateSource(info); });
-  socket.on('camera-disconnected', () => { hasCamera = false; updateSource(null); });
-  socket.on('display-reconnected', () => { setStatus(true); ctrlStatusTxt.textContent = 'Reconectado'; });
-  socket.on('display-disconnected', () => { setStatus(false); ctrlStatusTxt.textContent = 'Totem desconectado'; });
+  socket.on('settings-updated', applySettings);
+  socket.on('display-state', ({ state }) => {
+    displayState = state || displayState;
+    const labels = {
+      BOOTING: 'Preparando o telão', SEM_CAMERA: 'Reconectando a câmera', PRONTO: 'Pronto para fotografar',
+      CONTAGEM: 'Contagem regressiva', CAPTURANDO: 'Disparando', PROCESSANDO: 'Processando a foto',
+      RESULTADO: 'Exibindo foto e QR', ERRO: 'Erro recuperável',
+    };
+    displayStateEl.textContent = labels[displayState] || displayState;
+    if (['CONTAGEM', 'CAPTURANDO', 'PROCESSANDO'].includes(displayState)) capturing = true;
+    else if (['PRONTO', 'RESULTADO', 'ERRO'].includes(displayState)) releaseShutter();
+    updateAvailability();
+  });
+  socket.on('display-disconnected', () => { displayOnline = false; updateAvailability(); });
+  socket.on('display-reconnected', () => { displayOnline = true; updateAvailability(); });
+  socket.on('camera-estado', refreshCamera);
 
-  function updateSource(state) {
-    phoneSection.style.display = hasCamera ? 'block' : 'none';
-    camDivider.style.display = hasCamera ? 'block' : 'none';
-
-    if (!hasCamera) {
-      sourceHint.textContent = 'Fonte: webcam do totem. Abra /camera.html no celular para usar o sensor dele.';
-      cssHint.textContent = 'Ajustes visuais aplicados ao preview do totem.';
-      phoneName.textContent = 'Celular-câmera';
-      phoneSub.textContent = 'Nenhum aparelho pareado';
-      phoneCaps.textContent = '';
-      torchOn = false;
-      btnTorch.textContent = 'Ligar';
-      btnTorch.classList.remove('has-frame');
-      return;
+  async function refreshCamera() {
+    try {
+      const response = await fetch('/api/camera/status', { cache: 'no-store' });
+      applyCameraStatus(await response.json());
+    } catch {
+      applyCameraStatus({ disponivel: false, erro: 'Servidor da câmera indisponível' });
     }
-
-    const mp = state?.photoWidth && state?.photoHeight
-      ? ((state.photoWidth * state.photoHeight) / 1e6).toFixed(1)
-      : null;
-
-    sourceHint.textContent = mp
-      ? `Fonte: celular · fotos de ${state.photoWidth}×${state.photoHeight} (${mp} MP)`
-      : 'Fonte: celular pareado';
-
-    phoneName.textContent = shortLabel(state?.label) || 'Celular-câmera';
-    phoneSub.textContent = state?.streamWidth
-      ? `Preview ${state.streamWidth}×${state.streamHeight} · foto ${state.photoWidth}×${state.photoHeight}`
-      : 'Controles reais do sensor';
-
-    phoneCaps.textContent = [
-      mp ? `Resolução da foto: ${state.photoWidth} × ${state.photoHeight} (${mp} MP)` : '',
-      state?.facingMode ? `Lente: ${state.facingMode === 'user' ? 'frontal' : 'traseira'}` : '',
-      `Lanterna: ${state?.hasTorch ? 'disponível' : 'indisponível'}`,
-      `Zoom: ${state?.hasZoom ? 'disponível' : 'indisponível'}`,
-    ].filter(Boolean).join('\n');
-
-    btnTorch.disabled = !state?.hasTorch;
-    ctrlPhoneZoom.disabled = !state?.hasZoom;
   }
 
-  function shortLabel(label = '') {
-    return label.replace(/\s*\(.*\)$/, '').slice(0, 32);
+  function applyCameraStatus(status = {}) {
+    cameraStatus = status;
+    const model = status.modelo || 'Sony DSLR';
+    cameraModel.textContent = model;
+    cameraDetail.textContent = status.transmitindo
+      ? `Preview ativo · ${status.quadros || 0} quadros`
+      : status.erro || `Estado: ${status.estado || 'procurando'}`;
+    operatorCameraState.textContent = status.transmitindo
+      ? `${model} conectada e transmitindo`
+      : status.conflitoSony
+        ? 'Sony Imaging Edge está bloqueando a câmera. Desative “Sony CameraExt” nas Extensões de Câmera.'
+        : status.modelo ? `${model} conectada; restaurando o preview…` : 'Câmera não detectada';
+    sourceHint.textContent = operatorCameraState.textContent;
+
+    if (status.transmitindo) {
+      ligarPreviewControle();
+      controlPreviewEmpty.hidden = true;
+    } else if (!['preparando', 'disparando', 'religando'].includes(status.estado)) {
+      controlPreviewEmpty.hidden = false;
+    }
+    updateAvailability();
   }
 
-  function setStatus(online) {
-    ctrlDot.classList.toggle('connected', online);
-    ctrlStatusTxt.textContent = online ? 'Conectado' : 'Desconectado';
-    captureBtn.disabled = !online || capturing;
+  function ligarPreviewControle(forcar = false) {
+    const path = BOOTH.preview?.streamPath;
+    if (!path || (!forcar && controlPreview.getAttribute('src'))) return;
+    clearTimeout(previewRetry);
+    controlPreview.src = `${path}?viewer=${encodeURIComponent(previewViewerId)}&t=${Date.now()}`;
   }
 
-  /* ═══════════════════════════════════════════════════════
-     TABS
-     ═══════════════════════════════════════════════════════ */
-
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      panels.forEach(p => p.classList.add('hidden'));
-      tab.classList.add('active');
-      $(`panel-${tab.dataset.tab}`).classList.remove('hidden');
-    });
+  controlPreview.addEventListener('error', () => {
+    clearTimeout(previewRetry);
+    controlPreview.removeAttribute('src');
+    if (cameraReady()) previewRetry = setTimeout(() => ligarPreviewControle(true), 250);
   });
 
-  /* ═══════════════════════════════════════════════════════
-     DISPARO
-     ═══════════════════════════════════════════════════════ */
+  controlPreview.addEventListener('load', () => {
+    clearTimeout(previewRetry);
+    previewRetry = null;
+    controlPreviewEmpty.hidden = true;
+  });
 
-  captureBtn.addEventListener('click', () => {
-    if (!sessionCode || capturing) return;
+  setInterval(refreshCamera, 2000);
+
+  function startCapture() {
+    if (captureBtn.disabled || !sessionCode || capturing) return;
     capturing = true;
     captureBtn.classList.add('capturing');
-    captureBtn.disabled = true;
+    updateAvailability();
     socket.emit('trigger-capture', { code: sessionCode, timer: selectedTimer });
-    vibrate(40);
-
-    // Destrava mesmo se a foto falhar do outro lado.
-    setTimeout(releaseShutter, (selectedTimer + 25) * 1000);
-  });
+    clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(releaseShutter, (selectedTimer + 55) * 1000);
+  }
 
   function releaseShutter() {
     capturing = false;
     captureBtn.classList.remove('capturing');
-    captureBtn.disabled = !ctrlDot.classList.contains('connected');
+    updateAvailability();
   }
 
-  socket.on('photo-ready', ({ thumbnail, page, url, total }) => {
-    releaseShutter();
-    ctrlCount.textContent = `${total} fotos`;
-    addToGallery(page || url, thumbnail || url);
-    vibrate([80, 50, 80]);
+  captureBtn.addEventListener('click', startCapture);
+  document.addEventListener('keydown', event => {
+    if (event.code !== 'Space' || /INPUT|BUTTON|TEXTAREA|SELECT/.test(event.target.tagName)) return;
+    event.preventDefault();
+    startCapture();
   });
 
-  socket.on('camera-status', ({ status }) => { if (status === 'error') releaseShutter(); });
-
-  btnNext?.addEventListener('click', () => {
+  btnNext.addEventListener('click', () => {
     if (!sessionCode) return;
     socket.emit('reset-to-preview', { code: sessionCode });
-    vibrate(30);
+    releaseShutter();
   });
 
-  /* ═══════════════════════════════════════════════════════
-     GALERIA
-     ═══════════════════════════════════════════════════════ */
+  socket.on('photo-ready', photo => {
+    releaseShutter();
+    ctrlCount.textContent = `${photo.total} fotos`;
+    addToGallery({ ...photo, ts: Date.now() }, true);
+  });
+  socket.on('camera-status', ({ status }) => { if (status === 'error') releaseShutter(); });
 
-  function addToGallery(url, thumb) {
+  function photoId(photo) {
+    return String(photo.page || photo.pageUrl || '').split('/').filter(Boolean).pop();
+  }
+
+  function addToGallery(photo, prepend = false) {
+    const id = photoId(photo);
+    if (!id || galleryGrid.querySelector(`[data-photo-id="${CSS.escape(id)}"]`)) return;
     noPhotos.style.display = 'none';
-    const time = new Date();
-    const item = document.createElement('div');
+
+    const time = new Date(photo.ts || Date.now());
+    const item = document.createElement('button');
+    item.type = 'button';
     item.className = 'gallery-thumb';
+    item.dataset.photoId = id;
     item.innerHTML = `
-      <img src="${thumb}" alt="foto" loading="lazy">
-      <span class="gallery-time">${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}</span>
+      <img src="${photo.thumbnail || photo.thumbUrl || photo.url || photo.imageUrl}" alt="Foto de ${time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}" loading="lazy">
+      <span class="gallery-time">${time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+      <span class="gallery-action">Exibir QR</span>
     `;
-    item.addEventListener('click', () => {
-      socket.emit('show-photo', { code: sessionCode, url: thumb });
-      vibrate(30);
-    });
-    galleryGrid.prepend(item);
+    item.addEventListener('click', () => socket.emit('show-photo', { code: sessionCode, photoId: id }));
+    if (prepend) galleryGrid.prepend(item);
+    else galleryGrid.append(item);
   }
 
-  socket.on('session-photos', ({ photos }) => {
-    galleryGrid.querySelectorAll('.gallery-thumb').forEach(el => el.remove());
-    photos.forEach(p => addToGallery(p.page || p.url, p.thumbnail || p.url));
+  socket.on('session-photos', ({ photos = [] }) => {
+    galleryGrid.querySelectorAll('.gallery-thumb').forEach(item => item.remove());
+    [...photos].reverse().forEach(photo => addToGallery(photo));
+    noPhotos.style.display = photos.length ? 'none' : '';
   });
 
-  /* ═══════════════════════════════════════════════════════
-     AJUSTES DA SESSÃO
-     ═══════════════════════════════════════════════════════ */
+  timerPills.forEach(pill => pill.addEventListener('click', () => {
+    selectedTimer = Number(pill.dataset.timer);
+    timerPills.forEach(item => item.classList.toggle('active', item === pill));
+    socket.emit('update-settings', { code: sessionCode, settings: { timer: selectedTimer } });
+  }));
 
-  timerPills.forEach(pill => {
-    pill.addEventListener('click', () => {
-      selectedTimer = parseInt(pill.dataset.timer, 10);
-      timerPills.forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      pushSettings({ timer: selectedTimer });
+  ratioPills.forEach(pill => pill.addEventListener('click', () => {
+    selectedRatio = pill.dataset.ratio;
+    ratioPills.forEach(item => item.classList.toggle('active', item === pill));
+    socket.emit('update-settings', { code: sessionCode, settings: { aspectRatio: selectedRatio } });
+  }));
+
+  function ajustarFlashPeloSocket(mode) {
+    return new Promise((resolve, reject) => {
+      if (!socket.connected) return reject(new Error('Servidor desconectado'));
+
+      let terminou = false;
+      const concluir = resposta => {
+        if (terminou) return;
+        terminou = true;
+        clearTimeout(limite);
+        if (!resposta?.success) reject(new Error(resposta?.error || 'Não foi possível ajustar o flash'));
+        else resolve(resposta);
+      };
+      const limite = setTimeout(() => {
+        if (terminou) return;
+        terminou = true;
+        reject(new Error('A câmera não confirmou o flash em 20 segundos'));
+      }, 20_000);
+
+      socket.emit('camera-flash', { code: sessionCode, mode }, concluir);
     });
-  });
-
-  ratioPills.forEach(pill => {
-    pill.addEventListener('click', () => {
-      selectedRatio = pill.dataset.ratio;
-      ratioPills.forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      pushSettings({ aspectRatio: selectedRatio });
-      syncPreviewFields();
-    });
-  });
-
-  ctrlLead.addEventListener('input', () => {
-    valLead.textContent = `${ctrlLead.value}ms`;
-    pushSettings({ shutterLeadMs: parseInt(ctrlLead.value, 10) });
-  });
-
-  function pushSettings(settings) {
-    if (sessionCode) socket.emit('update-settings', { code: sessionCode, settings });
   }
 
-  socket.on('settings-updated', applySettings);
+  flashPills.forEach(pill => pill.addEventListener('click', async () => {
+    const mode = pill.dataset.flash;
+    if (!sessionCode || flashBusy || (mode === selectedFlashMode && mode === 'off')) return;
 
-  function applySettings(settings = {}) {
-    if (settings.timer) {
-      selectedTimer = settings.timer;
-      timerPills.forEach(p => p.classList.toggle('active', parseInt(p.dataset.timer, 10) === settings.timer));
+    const anterior = selectedFlashMode;
+    flashBusy = true;
+    flashControlStatus.className = 'flash-control-status';
+    flashControlStatus.textContent = mode === 'flash'
+      ? 'Levantando o flash e verificando a carga…'
+      : 'Desligando o flash no app…';
+    updateAvailability();
+
+    try {
+      const data = await ajustarFlashPeloSocket(mode);
+
+      applySettings({ flashMode: mode });
+      if (mode === 'off') {
+        flashControlStatus.textContent = data.requerFechamentoManual
+          ? 'Sem flash selecionado. Abaixe o flash da câmera manualmente.'
+          : 'Flash desligado.';
+      } else if (data.flash?.carregado === true) {
+        flashControlStatus.textContent = 'Flash levantado e carregado. Pronto para fotografar.';
+        flashControlStatus.classList.add('ready');
+      } else {
+        flashControlStatus.textContent = 'Comando enviado. Confirme que o flash abriu; o app repetirá antes da foto.';
+      }
+    } catch (error) {
+      applySettings({ flashMode: anterior });
+      flashControlStatus.textContent = error.message || 'Não foi possível ajustar o flash';
+      flashControlStatus.className = 'flash-control-status error';
+    } finally {
+      flashBusy = false;
+      updateAvailability();
     }
-    if (settings.aspectRatio) {
-      selectedRatio = settings.aspectRatio;
-      ratioPills.forEach(p => p.classList.toggle('active', p.dataset.ratio === settings.aspectRatio));
-      syncPreviewFields();
-    }
-    if (settings.shutterLeadMs !== undefined) {
-      ctrlLead.value = settings.shutterLeadMs;
-      valLead.textContent = `${settings.shutterLeadMs}ms`;
-    }
-  }
+  }));
 
-  function syncPreviewFields() {
-    const [a, b] = selectedRatio.split(':').map(Number);
-    const width = parseInt(ctrlPreviewW.value, 10);
-    const height = Math.round(width / (a / b));
-    ctrlPreviewH.value = height;
-    valPreviewH.textContent = `${height}px`;
-  }
-
-  /* ═══════════════════════════════════════════════════════
-     MOLDURA
-     ═══════════════════════════════════════════════════════ */
-
-  [btnFrame3x4, btnFrame4x3].forEach(btn => {
-    btn.addEventListener('click', () => {
-      pendingFrameRatio = btn.dataset.ratio;
-      frameInput.click();
-    });
-  });
+  [btnFrame3x4, btnFrame4x3].forEach(button => button.addEventListener('click', () => {
+    pendingFrameRatio = button.dataset.ratio;
+    frameInput.click();
+  }));
 
   frameInput.addEventListener('change', async () => {
     const file = frameInput.files[0];
     if (!file || !sessionCode || !pendingFrameRatio) return;
-
-    const btn = pendingFrameRatio === '3:4' ? btnFrame3x4 : btnFrame4x3;
-    const original = btn.textContent;
-    btn.textContent = 'Enviando…';
-    btn.disabled = true;
-
+    const button = pendingFrameRatio === '3:4' ? btnFrame3x4 : btnFrame4x3;
+    button.textContent = 'Enviando…';
+    button.disabled = true;
     try {
       const form = new FormData();
       form.append('frame', file);
       form.append('aspectRatio', pendingFrameRatio);
-      const resp = await fetch(`/api/frame/${sessionCode}`, { method: 'POST', body: form });
-      const data = await resp.json();
-      if (data.success) markFrame(btn);
-      else throw new Error(data.error);
+      const response = await fetch(`/api/frame/${sessionCode}`, { method: 'POST', body: form });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Falha no envio');
+      markFrame(button);
     } catch {
-      btn.textContent = 'Erro';
-      setTimeout(() => { btn.textContent = original; }, 2000);
+      button.textContent = 'Erro — tentar novamente';
     } finally {
-      btn.disabled = false;
+      button.disabled = false;
       frameInput.value = '';
     }
   });
 
-  function markFrame(btn) {
-    btn.classList.add('has-frame');
-    btn.textContent = 'Pronto ✓';
+  function markFrame(button) {
+    button.classList.add('has-frame');
+    button.textContent = 'Pronto ✓';
   }
 
-  /* ═══════════════════════════════════════════════════════
-     CONTROLES REAIS DO CELULAR
-     ═══════════════════════════════════════════════════════ */
-
-  function sendCameraControl(cmd) {
-    if (sessionCode) socket.emit('camera-control', { code: sessionCode, cmd });
+  async function profileAction(path, pendingText) {
+    cameraProfileStatus.textContent = pendingText;
+    try {
+      const response = await fetch(path, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      cameraProfileStatus.textContent = path.endsWith('/apply')
+        ? `Perfil restaurado · ${data.aplicados?.length || 0} ajustes`
+        : `Perfil salvo · ${Object.keys(data.perfil || {}).length} ajustes`;
+    } catch (error) {
+      cameraProfileStatus.textContent = error.message || 'Não foi possível concluir';
+    }
   }
 
-  btnTorch.addEventListener('click', () => {
-    torchOn = !torchOn;
-    btnTorch.textContent = torchOn ? 'Desligar' : 'Ligar';
-    btnTorch.classList.toggle('has-frame', torchOn);
-    sendCameraControl({ torch: torchOn });
-    vibrate(20);
-  });
+  btnSaveProfile.addEventListener('click', () => profileAction('/api/camera/profile', 'Lendo a câmera…'));
+  btnApplyProfile.addEventListener('click', () => profileAction('/api/camera/profile/apply', 'Restaurando ajustes…'));
 
-  btnAutofocus.addEventListener('click', () => {
-    sendCameraControl({ autofocus: true });
-    btnAutofocus.textContent = 'Focando…';
-    setTimeout(() => { btnAutofocus.textContent = 'Focar agora (AF)'; }, 1500);
-    vibrate(20);
-  });
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    tabs.forEach(item => item.classList.toggle('active', item === tab));
+    panels.forEach(panel => panel.classList.toggle('hidden', panel.id !== `panel-${tab.dataset.tab}`));
+  }));
 
-  ctrlPhoneZoom.addEventListener('input', () => {
-    valPhoneZoom.textContent = `${(+ctrlPhoneZoom.value).toFixed(1)}x`;
-    sendCameraControl({ zoom: parseFloat(ctrlPhoneZoom.value) });
+  btnDisconnect.addEventListener('click', () => {
+    localStorage.removeItem('globo-booth-ctrl-code');
+    location.href = '/control.html';
   });
-
-  ctrlPhoneEv.addEventListener('input', () => {
-    valPhoneEv.textContent = (+ctrlPhoneEv.value).toFixed(1);
-    sendCameraControl({ exposureCompensation: parseFloat(ctrlPhoneEv.value) });
-  });
-
-  btnPhoneMirror.addEventListener('click', () => {
-    phoneMirror = !phoneMirror;
-    btnPhoneMirror.textContent = phoneMirror ? 'Ligado' : 'Desligado';
-    btnPhoneMirror.classList.toggle('has-frame', phoneMirror);
-    sendCameraControl({ mirror: phoneMirror });
-  });
-
-  /* ═══════════════════════════════════════════════════════
-     FILTROS DO PREVIEW DO TOTEM
-     ═══════════════════════════════════════════════════════ */
-
-  function sendCamControl(cmd) {
-    if (sessionCode) socket.emit('cam-control', { code: sessionCode, cmd });
-  }
-
-  ctrlBrightness.addEventListener('input', () => {
-    valBrightness.textContent = ctrlBrightness.value;
-    sendCamControl({ brightness: parseFloat(ctrlBrightness.value) });
-  });
-  ctrlContrast.addEventListener('input', () => {
-    valContrast.textContent = `${ctrlContrast.value}%`;
-    sendCamControl({ contrast: parseInt(ctrlContrast.value, 10) });
-  });
-  ctrlSaturation.addEventListener('input', () => {
-    valSaturation.textContent = `${ctrlSaturation.value}%`;
-    sendCamControl({ saturation: parseInt(ctrlSaturation.value, 10) });
-  });
-  ctrlPreviewW.addEventListener('input', () => {
-    const [a, b] = selectedRatio.split(':').map(Number);
-    const width = parseInt(ctrlPreviewW.value, 10);
-    const height = Math.round(width / (a / b));
-    valPreviewW.textContent = `${width}px`;
-    ctrlPreviewH.value = height;
-    valPreviewH.textContent = `${height}px`;
-    sendCamControl({ previewWidth: width, previewHeight: height });
-  });
-  ctrlPreviewH.addEventListener('input', () => {
-    const [a, b] = selectedRatio.split(':').map(Number);
-    const height = parseInt(ctrlPreviewH.value, 10);
-    const width = Math.round(height * (a / b));
-    valPreviewH.textContent = `${height}px`;
-    ctrlPreviewW.value = width;
-    valPreviewW.textContent = `${width}px`;
-    sendCamControl({ previewWidth: width, previewHeight: height });
-  });
-  ctrlZoom.addEventListener('input', () => {
-    valZoom.textContent = `${ctrlZoom.value}x`;
-    sendCamControl({ zoom: parseFloat(ctrlZoom.value) });
-  });
-
-  btnResetCam.addEventListener('click', () => {
-    const [a, b] = selectedRatio.split(':').map(Number);
-    const width = 600;
-    const height = Math.round(width / (a / b));
-
-    ctrlBrightness.value = 0;   valBrightness.textContent = '0';
-    ctrlContrast.value = 100;   valContrast.textContent = '100%';
-    ctrlSaturation.value = 100; valSaturation.textContent = '100%';
-    ctrlPreviewW.value = width; valPreviewW.textContent = `${width}px`;
-    ctrlPreviewH.value = height; valPreviewH.textContent = `${height}px`;
-    ctrlZoom.value = 1;         valZoom.textContent = '1x';
-
-    sendCamControl({ brightness: 0, contrast: 100, saturation: 100, previewWidth: width, previewHeight: height, zoom: 1 });
-  });
-
-  socket.on('cam-control', ({ cmd = {} }) => {
-    if (cmd.brightness !== undefined) { ctrlBrightness.value = cmd.brightness; valBrightness.textContent = cmd.brightness; }
-    if (cmd.contrast !== undefined) { ctrlContrast.value = cmd.contrast; valContrast.textContent = `${cmd.contrast}%`; }
-    if (cmd.saturation !== undefined) { ctrlSaturation.value = cmd.saturation; valSaturation.textContent = `${cmd.saturation}%`; }
-    if (cmd.zoom !== undefined) { ctrlZoom.value = cmd.zoom; valZoom.textContent = `${cmd.zoom}x`; }
-    if (cmd.previewWidth !== undefined) { ctrlPreviewW.value = cmd.previewWidth; valPreviewW.textContent = `${cmd.previewWidth}px`; }
-    if (cmd.previewHeight !== undefined) { ctrlPreviewH.value = cmd.previewHeight; valPreviewH.textContent = `${cmd.previewHeight}px`; }
-  });
-
-  function vibrate(pattern) {
-    navigator.vibrate?.(pattern);
-  }
 })();

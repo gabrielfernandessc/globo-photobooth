@@ -15,7 +15,7 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createGphotoCamera, ESTADO } = require('../lib/camera-gphoto');
+const { createGphotoCamera, ESTADO, tempoAssentamento } = require('../lib/camera-gphoto');
 const { createPreviewHub } = require('../lib/preview');
 
 const FAKE = path.join(__dirname, 'helpers', 'fake-gphoto2.js');
@@ -32,7 +32,7 @@ function prepararFake(env = {}) {
   return { bin, dir, limpar: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
-function ambiente(env = {}) {
+function ambiente(env = {}, opcoes = {}) {
   const fake = prepararFake(env);
   const preview = createPreviewHub();
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-cap-'));
@@ -43,6 +43,7 @@ function ambiente(env = {}) {
     binario: fake.bin,
     sondarUsb: async () => false,
     pastaTemp: temp,
+    ...opcoes,
   });
 
   return {
@@ -84,6 +85,120 @@ test('a câmera é detectada e começa a transmitir', async () => {
   } finally {
     await a.limpar();
   }
+});
+
+test('a Canon tem prioridade sobre Sony e celular MTP', async () => {
+  const cameras = JSON.stringify([
+    { modelo: 'Samsung Galaxy models (MTP)', porta: 'usb:001,001' },
+    { modelo: 'Sony Alpha-A7 III (PC Control)', porta: 'usb:001,002' },
+    { modelo: 'Canon EOS 750D', porta: 'usb:001,003' },
+  ]);
+  const a = ambiente({ FAKE_CAMERAS: cameras });
+  try {
+    await a.camera.start();
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+    assert.equal(a.camera.status().modelo, 'Canon EOS 750D');
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('o app troca da Sony para a Canon quando ela é ligada depois', async () => {
+  const arquivo = path.join(os.tmpdir(), `booth-cameras-${process.pid}-${Date.now()}.json`);
+  fs.writeFileSync(arquivo, JSON.stringify([
+    { modelo: 'Sony Alpha-A7 III (PC Control)', porta: 'usb:001,002' },
+  ]));
+  const a = ambiente(
+    { FAKE_CAMERAS_FILE: arquivo },
+    { intervaloPreferenciaMs: 80 },
+  );
+  try {
+    await a.camera.start();
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+    assert.equal(a.camera.status().modelo, 'Sony Alpha-A7 III (PC Control)');
+
+    fs.writeFileSync(arquivo, JSON.stringify([
+      { modelo: 'Sony Alpha-A7 III (PC Control)', porta: 'usb:001,002' },
+      { modelo: 'Canon EOS 750D', porta: 'usb:001,003' },
+    ]));
+
+    assert.ok(await ate(
+      () => a.camera.status().modelo === 'Canon EOS 750D' && a.camera.status().transmitindo,
+      { prazoMs: 3000 },
+    ));
+  } finally {
+    await a.limpar();
+    fs.rmSync(arquivo, { force: true });
+  }
+});
+
+test('a Canon EOS Rebel T6i é reconhecida pelo nome internacional 750D', async () => {
+  const a = ambiente({ FAKE_MODELO: 'Canon EOS 750D' });
+  try {
+    await a.camera.start();
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+    assert.equal(a.camera.status().modelo, 'Canon EOS 750D');
+    assert.equal(tempoAssentamento(a.camera.status().modelo), 120);
+
+    const perfil = await a.camera.lerPerfil();
+    assert.equal(perfil.imageformat, 'Large Fine JPEG');
+    assert.equal(perfil.aperture, '8');
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('o app levanta o flash interno da T6i e devolve o live view', async () => {
+  const marcador = path.join(os.tmpdir(), `booth-flash-${process.pid}-${Date.now()}`);
+  const modoP = path.join(os.tmpdir(), `booth-flash-modo-p-${process.pid}-${Date.now()}`);
+  const a = ambiente({
+    FAKE_MODELO: 'Canon EOS 750D',
+    FAKE_FLASH_MARKER: marcador,
+    FAKE_EXPOSURE_MARKER: modoP,
+  });
+  try {
+    await a.camera.start();
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+
+    const inicial = await a.camera.lerFlash();
+    assert.equal(inicial.suportado, true);
+    assert.equal(inicial.podeLevantar, true);
+    assert.equal(inicial.podeRecolher, false);
+    assert.equal(inicial.carregado, false);
+    assert.ok(await ate(() => a.camera.status().transmitindo), 'consultar o flash deixou o preview parado');
+
+    const levantado = await a.camera.levantarFlash();
+    assert.equal(levantado.comandoEnviado, true);
+    assert.equal(levantado.carregado, true);
+    assert.ok(fs.existsSync(marcador), 'o comando de levantar flash não chegou à câmera');
+    assert.equal(fs.readFileSync(modoP, 'utf8'), 'P', 'a T6i precisa sair do Auto para forçar o flash');
+    assert.ok(await ate(() => a.camera.status().transmitindo), 'levantar o flash deixou o preview parado');
+  } finally {
+    await a.limpar();
+    fs.rmSync(marcador, { force: true });
+    fs.rmSync(modoP, { force: true });
+  }
+});
+
+test('câmera sem popup remoto recusa o flash sem derrubar o preview', async () => {
+  const a = ambiente({ FAKE_MODELO: 'Sony Alpha-A7 III (PC Control)', FAKE_SEM_FLASH: 1 });
+  try {
+    await a.camera.start();
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+
+    const info = await a.camera.lerFlash();
+    assert.equal(info.suportado, false);
+    await assert.rejects(() => a.camera.levantarFlash(), /não permite levantar o flash/i);
+    assert.ok(await ate(() => a.camera.status().transmitindo), 'erro no flash deixou o preview parado');
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('a Sony conserva a margem PTP maior que a Canon', () => {
+  assert.equal(tempoAssentamento('Sony Alpha-A7 III (PC Control)'), 600);
+  assert.equal(tempoAssentamento('Canon EOS 750D'), 120);
+  assert.equal(tempoAssentamento('câmera genérica'), 300);
 });
 
 test('os quadros remontados chegam íntegros ao telão', async () => {
@@ -128,6 +243,28 @@ test('sem câmera conectada o erro é claro e o estado é falha', async () => {
   }
 });
 
+test('câmera conectada depois do boot é detectada sem reiniciar o app', async () => {
+  const marcador = path.join(os.tmpdir(), `booth-camera-presente-${process.pid}-${Date.now()}`);
+  const a = ambiente(
+    { FAKE_CAMERA_APOS: marcador },
+    { intervaloReconexaoMs: 80 },
+  );
+
+  try {
+    assert.equal(await a.camera.start(), false);
+    assert.equal(a.camera.status().estado, ESTADO.FALHA);
+
+    fs.writeFileSync(marcador, 'presente');
+
+    const conectou = await ate(() => a.camera.status().transmitindo, { prazoMs: 3000 });
+    assert.ok(conectou, 'a câmera não foi redetectada depois de aparecer');
+    assert.equal(a.camera.status().estado, ESTADO.LIVE_VIEW);
+  } finally {
+    await a.limpar();
+    fs.rmSync(marcador, { force: true });
+  }
+});
+
 test('o disparo solta o live view, grava o arquivo e devolve o live view', async () => {
   const a = ambiente();
   try {
@@ -146,6 +283,78 @@ test('o disparo solta o live view, grava o arquivo e devolve o live view', async
     const voltou = await ate(() => a.camera.status().transmitindo);
     assert.ok(voltou, 'o live view não voltou depois do disparo');
     assert.equal(a.camera.status().estado, ESTADO.LIVE_VIEW);
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('pré-armar durante o número 1 tira o assentamento do pós-contagem', async () => {
+  const a = ambiente({ FAKE_MODELO: 'Canon EOS 750D', FAKE_CAPTURA_MS: 100 });
+  try {
+    await a.camera.start();
+    await ate(() => a.camera.status().transmitindo);
+
+    const preparo = await a.camera.prepararCaptura();
+    assert.equal(preparo.pronta, true);
+    assert.equal(preparo.assentamentoMs, 120);
+    assert.equal(a.camera.status().estado, ESTADO.PREPARANDO);
+    assert.equal(a.camera.status().preparada, true);
+
+    const resultado = await a.camera.capturar();
+    assert.equal(resultado.prearmada, true);
+    assert.ok(resultado.comandoMs < 500, `o comando demorou ${resultado.comandoMs} ms`);
+
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('flash persistido é rearmado no mesmo comando do disparo', async () => {
+  const marcador = path.join(os.tmpdir(), `booth-flash-preparo-${process.pid}-${Date.now()}`);
+  const contador = path.join(os.tmpdir(), `booth-flash-contador-${process.pid}-${Date.now()}`);
+  const modoP = path.join(os.tmpdir(), `booth-flash-preparo-p-${process.pid}-${Date.now()}`);
+  const a = ambiente({
+    FAKE_MODELO: 'Canon EOS 750D',
+    FAKE_FLASH_MARKER: marcador,
+    FAKE_FLASH_COUNT_FILE: contador,
+    FAKE_EXPOSURE_MARKER: modoP,
+    FAKE_CAPTURA_MS: 100,
+  });
+  try {
+    await a.camera.start();
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+
+    const preparo = await a.camera.prepararCaptura({ flash: true });
+    assert.equal(preparo.flash.comandoEnviado, true);
+    assert.ok(fs.existsSync(marcador), 'o preparo não levantou o flash');
+    assert.equal(fs.readFileSync(contador, 'utf8').trim().split('\n').length, 1);
+
+    const resultado = await a.camera.capturar({ flash: true });
+    assert.equal(resultado.prearmada, true);
+    assert.equal(resultado.flash, true);
+    assert.equal(fs.readFileSync(contador, 'utf8').trim().split('\n').length, 2);
+    assert.equal(fs.readFileSync(modoP, 'utf8'), 'P');
+    assert.ok(await ate(() => a.camera.status().transmitindo));
+  } finally {
+    await a.limpar();
+    fs.rmSync(marcador, { force: true });
+    fs.rmSync(contador, { force: true });
+    fs.rmSync(modoP, { force: true });
+  }
+});
+
+test('preparo abandonado devolve o live view sozinho', async () => {
+  const a = ambiente({ FAKE_MODELO: 'Canon EOS 750D' });
+  try {
+    await a.camera.start();
+    await ate(() => a.camera.status().transmitindo);
+
+    await a.camera.prepararCaptura({ validadeMs: 80 });
+    assert.equal(a.camera.status().transmitindo, false);
+
+    const voltou = await ate(() => a.camera.status().transmitindo, { prazoMs: 2500 });
+    assert.ok(voltou, 'uma contagem cancelada deixou a Canon fora do live view');
   } finally {
     await a.limpar();
   }
@@ -216,12 +425,102 @@ test('live view que cai sozinho é religado', async () => {
     a.camera.onChange(e => estados.push(e.estado));
 
     await a.camera.start();
+    const transmitiu = await ate(() => a.camera.status().transmitindo, { prazoMs: 2500 });
+    assert.ok(transmitiu, 'deveria ter transmitido antes de cair');
+    estados.length = 0;
     await ate(() => estados.includes(ESTADO.RELIGANDO), { prazoMs: 4000 });
 
-    assert.ok(estados.includes(ESTADO.LIVE_VIEW), 'deveria ter transmitido antes de cair');
     assert.ok(estados.includes(ESTADO.RELIGANDO), `não tentou religar: ${estados.join(' → ')}`);
   } finally {
     await a.limpar();
+  }
+});
+
+test('live view vivo sem nenhum quadro é encerrado e religado', async () => {
+  const a = ambiente(
+    { FAKE_LIVE_SEM_QUADROS: 1 },
+    { timeoutPrimeiroQuadroMs: 180 },
+  );
+
+  try {
+    const estados = [];
+    a.camera.onChange(e => estados.push(e.estado));
+
+    await a.camera.start();
+    const tentouReligar = await ate(() => estados.includes(ESTADO.RELIGANDO), { prazoMs: 2500 });
+
+    assert.ok(tentouReligar, `stream mudo não foi reiniciado: ${estados.join(' → ')}`);
+    assert.equal(a.camera.status().transmitindo, false);
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('live view que congela depois de transmitir também é religado', async () => {
+  const a = ambiente(
+    { FAKE_LIVE_TRAVA_APOS: 3 },
+    { timeoutEntreQuadrosMs: 180, intervaloReconexaoMs: 40 },
+  );
+
+  try {
+    const estados = [];
+    a.camera.onChange(e => estados.push(e.estado));
+
+    await a.camera.start();
+    const transmitiu = await ate(() => a.camera.status().quadros >= 3, { prazoMs: 2000 });
+    assert.ok(transmitiu, 'o stream deveria transmitir antes de congelar');
+
+    estados.length = 0;
+    const religou = await ate(() => estados.includes(ESTADO.RELIGANDO), { prazoMs: 2500 });
+    assert.ok(religou, `stream congelado não foi reiniciado: ${estados.join(' → ')}`);
+  } finally {
+    await a.limpar();
+  }
+});
+
+test('dois streams mudos resetam a porta USB e recuperam o preview', async () => {
+  const marcador = path.join(os.tmpdir(), `booth-camera-reset-${process.pid}-${Date.now()}`);
+  const a = ambiente(
+    { FAKE_LIVE_MUDO_ATE_RESET: marcador, FAKE_MODELO: 'Sony Alpha-A7 III (PC Control)' },
+    {
+      timeoutPrimeiroQuadroMs: 120,
+      intervaloReconexaoMs: 40,
+      streamsMudosAntesReset: 2,
+      esperaAposResetMs: 20,
+    },
+  );
+
+  try {
+    await a.camera.start();
+    assert.equal(a.camera.status().estado, ESTADO.RELIGANDO, 'não pode declarar live view antes do primeiro quadro');
+
+    const recuperou = await ate(() => a.camera.status().transmitindo, { prazoMs: 6000 });
+    assert.ok(recuperou, 'o preview não voltou depois do reset USB');
+    assert.ok(fs.existsSync(marcador), 'o driver não executou o reset da porta');
+    assert.equal(a.camera.status().estado, ESTADO.LIVE_VIEW);
+  } finally {
+    await a.limpar();
+    fs.rmSync(marcador, { force: true });
+  }
+});
+
+test('Canon que encerra com zero frames reseta já na primeira ocorrência', async () => {
+  const marcador = path.join(os.tmpdir(), `booth-canon-reset-${process.pid}-${Date.now()}`);
+  const a = ambiente(
+    { FAKE_LIVE_ZERO_ATE_RESET: marcador, FAKE_MODELO: 'Canon EOS 750D' },
+    { intervaloReconexaoMs: 30, esperaAposResetMs: 20 },
+  );
+
+  try {
+    await a.camera.start();
+    const recuperou = await ate(() => a.camera.status().transmitindo, { prazoMs: 3500 });
+
+    assert.ok(recuperou, 'a T6i ficou repetindo streams de zero frames');
+    assert.ok(fs.existsSync(marcador), 'a primeira queda sem quadros deveria resetar a Canon');
+    assert.equal(a.camera.status().modelo, 'Canon EOS 750D');
+  } finally {
+    await a.limpar();
+    fs.rmSync(marcador, { force: true });
   }
 });
 
@@ -263,11 +562,10 @@ test('o status distingue "transmitindo agora" de "já transmitiu um dia"', async
   }
 });
 
-test('câmera no cabo em modo errado é diagnosticada como tal', async () => {
-  // O sintoma é idêntico ao de cabo desconectado — gphoto2 não a vê —
-  // mas a solução é abrir um menu, não procurar um cabo. Um erro de
-  // cartão que peça recuperação reseta a Sony para Armaz. Massa, então
-  // isto acontece sozinho no meio de um evento.
+test('câmera visível no USB sem resposta de captura tem diagnóstico próprio', async () => {
+  // O sintoma também ocorre quando a Sony está em PC Remoto mas a sessão
+  // PTP travou. Mandar apenas trocar o modo deixa o operador sem saída
+  // justamente quando a configuração já está certa.
   const fake = prepararFake({ FAKE_SEM_CAMERA: 1 });
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-modo-'));
   const camera = createGphotoCamera({
@@ -283,8 +581,8 @@ test('câmera no cabo em modo errado é diagnosticada como tal', async () => {
     assert.equal(await camera.start(), false);
 
     const erro = camera.status().erro;
-    assert.match(erro, /modo de armazenamento/i);
     assert.match(erro, /PC Remoto/i, 'a mensagem precisa dizer para onde mudar');
+    assert.match(erro, /desligue e ligue/i, 'a mensagem precisa cobrir sessão PTP travada');
     assert.doesNotMatch(erro, /nenhuma câmera/i, 'não pode mandar procurar um cabo que está no lugar');
   } finally {
     await camera.stop();

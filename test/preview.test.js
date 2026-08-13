@@ -92,6 +92,18 @@ test('quem assina já recebe um quadro, sem esperar o próximo', () => {
   assert.equal(primeiro, 'atual');
 });
 
+test('o hub expõe o quadro atual sem criar assinante', () => {
+  const hub = createPreviewHub();
+  hub.publicar('AB3D', Buffer.from('atual'), { width: 640, height: 480 });
+
+  const quadro = hub.quadroAtual('AB3D');
+  assert.equal(quadro.jpeg.toString(), 'atual');
+  assert.equal(quadro.largura, 640);
+  assert.equal(quadro.altura, 480);
+  assert.equal(quadro.sequencia, 1);
+  assert.equal(hub.status('AB3D').assinantes, 0);
+});
+
 test('o hub sabe se há plateia — é como o celular decide gastar bateria', () => {
   const hub = createPreviewHub();
   assert.equal(hub.temAudiencia('AB3D'), false);
@@ -175,6 +187,16 @@ function abrirStream(url, { aoReceber, prazoMs = 5000 }) {
   });
 }
 
+function manterStream(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, res => {
+      res.on('data', () => {});
+      resolve({ req, res });
+    });
+    req.on('error', reject);
+  });
+}
+
 test('o celular publica e o telão recebe pelo stream', async () => {
   const { code } = await novaSessao();
   const jpeg = await jpegDe(320, 240, '#e74c3c');
@@ -211,6 +233,27 @@ test('o celular publica e o telão recebe pelo stream', async () => {
   assert.equal(meta.height, 240);
 });
 
+test('reabrir o mesmo viewer substitui o stream anterior sem vazar assinante', async () => {
+  const { code } = await novaSessao();
+  const url = `${base}/api/preview/${code}/stream?viewer=tela-estavel`;
+  const primeiro = await manterStream(url);
+  const primeiroFechou = new Promise(resolve => primeiro.res.once('close', resolve));
+  const segundo = await manterStream(url);
+
+  await Promise.race([
+    primeiroFechou,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('stream anterior não fechou')), 1000)),
+  ]);
+
+  const durante = await (await fetch(`${base}/api/preview/${code}/status`)).json();
+  assert.equal(durante.assinantes, 1);
+
+  segundo.req.destroy();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const depois = await (await fetch(`${base}/api/preview/${code}/status`)).json();
+  assert.equal(depois.assinantes, 0);
+});
+
 test('sem telão aberto o servidor avisa que não há plateia', async () => {
   const { code } = await novaSessao();
   const resp = await publicar(code, await jpegDe(64, 64, '#000000'));
@@ -239,4 +282,20 @@ test('o status por HTTP acompanha os quadros publicados', async () => {
   assert.ok(status.quadros >= 1);
   assert.equal(status.largura, 200);
   assert.ok(status.idadeMs < 3000);
+});
+
+test('o app entrega o quadro atual em uma resposta JPEG curta', async () => {
+  const { code } = await novaSessao();
+  const jpeg = await jpegDe(200, 150, '#3498db');
+  await publicar(code, jpeg);
+
+  const resposta = await fetch(`${base}/api/preview/${code}/frame`);
+  assert.equal(resposta.status, 200);
+  assert.equal(resposta.headers.get('content-type'), 'image/jpeg');
+  assert.equal(Number(resposta.headers.get('content-length')), jpeg.length);
+  assert.equal(resposta.headers.get('x-preview-sequence'), '1');
+  assert.deepEqual(Buffer.from(await resposta.arrayBuffer()), jpeg);
+
+  const status = await (await fetch(`${base}/api/preview/${code}/status`)).json();
+  assert.equal(status.assinantes, 0, 'uma resposta curta não pode vazar assinante');
 });

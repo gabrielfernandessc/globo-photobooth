@@ -37,6 +37,11 @@ async function subirServidor(extraEnv = {}) {
       ENABLE_HTTPS: 'false',
       SAVE_TO_DOWNLOADS: 'false',
       CAMERA_SOURCE: 'nenhum',
+      // O desenvolvedor pode ter um .env real para testar publicação.
+      // A linha de base desta suíte continua sendo deliberadamente offline.
+      CLOUD_DRIVER: 'none',
+      BLOB_READ_WRITE_TOKEN: '',
+      PUBLIC_BASE_URL: '',
       DEFAULT_FRAME: '/inexistente/sem-moldura.png',
       DATA_DIR: dataDir,
       UPLOADS_DIR: path.join(dataDir, 'uploads'),

@@ -85,6 +85,7 @@ test('/api/config diz ao cliente onde o socket mora', async () => {
 
   assert.equal(typeof body.socketPath, 'string');
   assert.ok(Array.isArray(body.transports) && body.transports.length > 0);
+  assert.match(body.preview.framePath, /\/api\/preview\/[A-Z0-9]{4}\/frame$/);
   assert.equal(body.storage, 'local');
   assert.ok(body.maxUploadBytes > 0);
 });
@@ -95,6 +96,27 @@ test('a sessão é criada sem precisar de tela aberta', async () => {
   assert.match(sessao.code, /^[A-Z0-9]{4}$/);
   assert.ok(sessao.token?.startsWith(`${sessao.code}.`), 'devia vir um token assinado');
   assert.equal(sessao.settings.aspectRatio, '3:4');
+});
+
+test('a API do flash valida o modo e mantém a preferência na sessão', async () => {
+  const { code } = await novaSessao();
+
+  const invalido = await fetch(`${base}/api/camera/flash`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code, mode: 'automatico' }),
+  });
+  assert.equal(invalido.status, 400);
+
+  const desligado = await fetch(`${base}/api/camera/flash`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code, mode: 'off' }),
+  });
+  assert.equal(desligado.status, 200);
+
+  const sessao = await (await fetch(`${base}/api/session/${code}`)).json();
+  assert.equal(sessao.settings.flashMode, 'off');
 });
 
 test('a foto atravessa o caminho inteiro: upload, composição, página e download', async () => {

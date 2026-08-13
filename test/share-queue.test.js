@@ -216,6 +216,28 @@ test('sem nuvem configurada o trabalho é dispensado, não marcado como falha', 
   }
 });
 
+test('configurar a nuvem depois publica fotos que tinham sido ignoradas', async () => {
+  const { repo, fila, novaFoto, limpar } = ambiente(nullPublisher());
+  try {
+    const id = novaFoto();
+    await fila.tick();
+    assert.equal(repo.getShareJob(id).status, SHARE.SKIPPED);
+
+    const publisher = publisherFalso();
+    const filaOnline = createShareQueue({
+      repo,
+      storage: { async get() { return Buffer.from('bytes'); } },
+      publisher,
+    });
+
+    await filaOnline.tick();
+    assert.equal(repo.getShareJob(id).status, SHARE.PUBLISHED);
+    assert.equal(repo.getPhoto(id).publicUrl, `https://exemplo.com/photo/${id}`);
+  } finally {
+    limpar();
+  }
+});
+
 test('a fila retoma pendências depois de o servidor reiniciar', async () => {
   const publisher = publisherFalso();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-queue-restart-'));

@@ -64,45 +64,75 @@
 
     <!-- ── TAB: Shoot ── -->
     <div class="tab-panel active" id="panel-shoot">
-      <p class="camera-hint" id="source-hint">Verificando a fonte de imagem…</p>
-      <div class="capture-row">
-        <button class="capture-btn" id="capture-btn" disabled></button>
-      </div>
-      <button class="btn-next" id="btn-next">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-        Próximo da fila
-      </button>
+      <div class="operator-layout">
+        <section class="operator-monitor">
+          <div class="operator-monitor-header">
+            <div>
+              <strong>Telão ao vivo</strong>
+              <span id="display-state">Preparando…</span>
+            </div>
+            <span class="camera-live-badge" id="camera-live-badge">Sem imagem</span>
+          </div>
+          <div class="operator-preview-frame">
+            <img id="control-preview" alt="Preview da câmera">
+            <div class="operator-preview-empty" id="control-preview-empty">Aguardando a câmera…</div>
+          </div>
+          <p class="operator-camera-state" id="operator-camera-state">Verificando a Sony…</p>
+        </section>
 
-      <div class="setting-block">
-        <span class="setting-label">Timer</span>
-        <div class="pills">
-          <button class="pill active" data-timer="3" id="t3">3s</button>
-          <button class="pill" data-timer="5" id="t5">5s</button>
-          <button class="pill" data-timer="10" id="t10">10s</button>
-        </div>
-      </div>
+        <section class="operator-actions">
+          <p class="camera-hint" id="source-hint">Verificando a fonte de imagem…</p>
+          <div class="capture-row">
+            <button class="capture-btn" id="capture-btn" aria-label="Tirar foto" disabled></button>
+            <strong id="capture-label">Aguardando a câmera</strong>
+            <span>Barra de espaço também dispara</span>
+          </div>
+          <button class="btn-next" id="btn-next">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+            Voltar ao preview / próximo da fila
+          </button>
 
-      <div class="setting-block">
-        <span class="setting-label">Orientação</span>
-        <div class="pills">
-          <button class="pill active" data-ratio="3:4" id="r34">Em pé (3:4)</button>
-          <button class="pill" data-ratio="4:3" id="r43">Deitado (4:3)</button>
-        </div>
-      </div>
+          <div class="setting-block">
+            <span class="setting-label">Contagem regressiva</span>
+            <div class="pills">
+              <button class="pill active" data-timer="3" id="t3">3s</button>
+              <button class="pill" data-timer="5" id="t5">5s</button>
+              <button class="pill" data-timer="10" id="t10">10s</button>
+            </div>
+          </div>
 
-      <div class="setting-block">
-        <span class="setting-label">Moldura (PNG)</span>
-        <div class="pills">
-          <button class="pill frame-btn" id="btn-frame-3x4" data-ratio="3:4">Enviar em pé</button>
-          <button class="pill frame-btn" id="btn-frame-4x3" data-ratio="4:3">Enviar deitado</button>
-        </div>
-        <input type="file" id="frame-input" accept="image/png" style="display:none">
+          <div class="setting-block">
+            <span class="setting-label">Orientação</span>
+            <div class="pills">
+              <button class="pill active" data-ratio="3:4" id="r34">Em pé (3:4)</button>
+              <button class="pill" data-ratio="4:3" id="r43">Deitado (4:3)</button>
+            </div>
+          </div>
+
+          <div class="setting-block">
+            <span class="setting-label">Flash interno</span>
+            <div class="pills">
+              <button class="pill active" data-flash="off" id="flash-off">Sem flash</button>
+              <button class="pill" data-flash="flash" id="flash-on">Com flash</button>
+            </div>
+            <p class="flash-control-status" id="flash-control-status">Flash desligado.</p>
+          </div>
+
+          <div class="setting-block">
+            <span class="setting-label">Moldura (PNG)</span>
+            <div class="pills">
+              <button class="pill frame-btn" id="btn-frame-3x4" data-ratio="3:4">Enviar em pé</button>
+              <button class="pill frame-btn" id="btn-frame-4x3" data-ratio="4:3">Enviar deitado</button>
+            </div>
+            <input type="file" id="frame-input" accept="image/png" style="display:none">
+          </div>
+        </section>
       </div>
     </div>
 
     <!-- ── TAB: Gallery ── -->
     <div class="tab-panel hidden" id="panel-gallery">
-      <p class="gallery-hint">Toque em uma foto para exibi-la no totem novamente.</p>
+      <p class="gallery-hint">Clique em uma foto para exibi-la no telão novamente.</p>
       <div class="gallery-grid" id="gallery-grid">
         <p class="no-photos" id="no-photos">Ainda sem fotos nesta sessão.</p>
       </div>
@@ -110,91 +140,21 @@
 
     <!-- ── TAB: Camera ── -->
     <div class="tab-panel hidden" id="panel-camera">
-
-      <!-- Controles reais do celular-câmera (aparecem quando há um pareado) -->
-      <div id="phone-section" style="display:none">
+      <div class="camera-desktop-card">
         <div class="cam-section-header">
-          <span class="cam-section-icon">📱</span>
+          <span class="cam-section-icon">📷</span>
           <div>
-            <span class="cam-section-title" id="phone-name">Celular-câmera</span>
-            <span class="cam-section-sub" id="phone-sub">Controles reais do sensor</span>
+            <span class="cam-section-title" id="camera-model">Sony DSLR</span>
+            <span class="cam-section-sub" id="camera-detail">Consultando estado…</span>
           </div>
         </div>
-
         <div class="cam-control">
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Lanterna</span>
-            <button class="btn btn-outline btn-sm" id="btn-torch" style="flex:1">Ligar</button>
+          <p class="camera-profile-note">Guarde a configuração atual da câmera antes do evento. Se o corpo perder ISO, abertura ou velocidade, restaure tudo por aqui.</p>
+          <div class="camera-profile-actions">
+            <button class="btn btn-outline btn-sm" id="btn-save-profile">Salvar perfil atual</button>
+            <button class="btn btn-primary btn-sm" id="btn-apply-profile">Restaurar perfil salvo</button>
           </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Foco</span>
-            <button class="btn btn-outline btn-sm" id="btn-autofocus" style="flex:1">Focar agora (AF)</button>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Zoom</span>
-            <input type="range" id="ctrl-phone-zoom" min="1" max="4" step="0.1" value="1">
-            <span class="cam-val" id="val-phone-zoom">1.0x</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Exposição</span>
-            <input type="range" id="ctrl-phone-ev" min="-3" max="3" step="0.33" value="0">
-            <span class="cam-val" id="val-phone-ev">0</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Espelhar</span>
-            <button class="btn btn-outline btn-sm" id="btn-phone-mirror" style="flex:1">Desligado</button>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Antecipar disparo</span>
-            <input type="range" id="ctrl-lead" min="0" max="800" step="50" value="250">
-            <span class="cam-val" id="val-lead">250ms</span>
-          </div>
-          <p class="cam-note">Compensa o atraso do obturador do celular: a foto sai no “0” da contagem.</p>
-        </div>
-
-        <div class="cam-control" id="phone-caps" style="font-size:12px;color:var(--preto-50);white-space:pre-line"></div>
-      </div>
-
-      <!-- Divider -->
-      <div id="cam-divider" class="cam-divider" style="display:none">
-        <span>Filtros de vídeo</span>
-      </div>
-
-      <!-- Filtros CSS aplicados ao preview do totem (sempre disponíveis) -->
-      <div id="css-section">
-        <p class="camera-hint" id="css-hint">Ajustes visuais aplicados ao preview do totem (não alteram o arquivo final).</p>
-        <div class="cam-control">
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Brilho</span>
-            <input type="range" id="ctrl-brightness" min="-10" max="10" step="1" value="0">
-            <span class="cam-val" id="val-brightness">0</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Contraste</span>
-            <input type="range" id="ctrl-contrast" min="50" max="200" step="5" value="100">
-            <span class="cam-val" id="val-contrast">100%</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Saturação</span>
-            <input type="range" id="ctrl-saturation" min="0" max="200" step="5" value="100">
-            <span class="cam-val" id="val-saturation">100%</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Preview L</span>
-            <input type="range" id="ctrl-preview-w" min="200" max="1000" step="10" value="600">
-            <span class="cam-val" id="val-preview-w">600px</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Preview A</span>
-            <input type="range" id="ctrl-preview-h" min="200" max="1000" step="10" value="800">
-            <span class="cam-val" id="val-preview-h">800px</span>
-          </div>
-          <div class="cam-ctrl-row">
-            <span class="cam-label">Zoom</span>
-            <input type="range" id="ctrl-zoom" min="1" max="3" step="0.1" value="1">
-            <span class="cam-val" id="val-zoom">1x</span>
-          </div>
-          <button class="btn btn-outline btn-sm" id="btn-reset-cam">Resetar filtros</button>
+          <p class="camera-profile-status" id="camera-profile-status"></p>
         </div>
       </div>
     </div>

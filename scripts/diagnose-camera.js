@@ -47,12 +47,17 @@ function rodar(cmd, args, { timeoutMs = 30_000 } = {}) {
  */
 async function liberarCameraNoMac() {
   if (process.platform !== 'darwin') return false;
-  const { stdout } = await rodar('pgrep', ['-x', 'PTPCamera']);
-  if (!stdout.trim()) return false;
+  const encerrados = [];
+  for (const processo of ['PTPCamera', 'icdd']) {
+    const { stdout } = await rodar('pgrep', ['-x', processo]);
+    if (!stdout.trim()) continue;
+    await rodar('killall', [processo]);
+    encerrados.push(processo);
+  }
+  if (!encerrados.length) return false;
 
-  await rodar('killall', ['PTPCamera']);
-  log(cor.aviso('  PTPCamera do macOS derrubado (ele disputa a câmera com o gphoto2)'));
-  await new Promise(r => setTimeout(r, 800));
+  log(cor.aviso(`  ${encerrados.join(' e ')} encerrado(s) (disputavam a câmera com o gphoto2)`));
+  await new Promise(r => setTimeout(r, 500));
   return true;
 }
 
@@ -99,6 +104,10 @@ async function detectar() {
   linhas.forEach(l => log(`    ${l.trim()}`));
 
   const modelo = linhas[0].trim().replace(/\s{2,}usb:.*$/, '').trim();
+
+  if (/Canon EOS 750D/i.test(modelo)) {
+    log(cor.fraco('  Nota: EOS Rebel T6i é o nome americano da EOS 750D; o gphoto2 usa 750D.'));
+  }
 
   // O modo importa mais que o modelo: a mesma câmera em MTP não fotografa.
   if (/MTP|Mass Storage/i.test(modelo)) {

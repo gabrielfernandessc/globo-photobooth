@@ -19,6 +19,9 @@ process.env.DATA_DIR = UPLOADS;
 process.env.DATABASE_FILE = path.join(UPLOADS, 'booth.sqlite');
 process.env.SAVE_TO_DOWNLOADS = 'false';
 process.env.ENABLE_HTTPS = 'false';
+// Este teste valida sockets HTTP, não hardware. Sem isolamento ele
+// poderia encerrar o gphoto2 do app real aberto ao lado da suíte.
+process.env.CAMERA_SOURCE = 'nenhum';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

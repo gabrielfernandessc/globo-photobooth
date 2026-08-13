@@ -70,6 +70,9 @@ async function principal() {
     process.stdout.write(`  ${String(i).padStart(3)}/${TOTAL}  `);
 
     try {
+      const preparo = await json(`${BASE}/api/camera/prepare`, { method: 'POST' });
+      if (preparo.status !== 200) throw new Error(preparo.corpo.error || `preparo HTTP ${preparo.status}`);
+
       const { status, corpo } = await json(`${BASE}/api/capture`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

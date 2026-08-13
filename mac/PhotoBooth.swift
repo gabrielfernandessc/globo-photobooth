@@ -14,7 +14,8 @@
      · um processo no Dock, não dois
      · o servidor sobe e morre junto com a janela
 
-   A tela é a mesma /totem.html, dentro de um WKWebView em tela cheia.
+   O painel do operador e o telão são WKWebViews separados: o primeiro
+   fica no Mac e o segundo abre no monitor externo.
    ══════════════════════════════════════════════════════════ */
 
 import Cocoa
@@ -41,8 +42,10 @@ final class JanelaDoTotem: NSWindow {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
-    var janela: NSWindow!
-    var web: WKWebView!
+    var janelaTelao: NSWindow!
+    var janelaControle: NSWindow!
+    var webTelao: WKWebView!
+    var webControle: WKWebView!
     var servidor: Process?
     var log: FileHandle?
 
@@ -50,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         abrirLog()
-        montarJanela()
+        montarJanelas()
 
         guard let node = acharNode() else {
             falhar("O Node.js não foi encontrado.",
@@ -104,18 +107,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         guard item.tag >= 1, item.tag <= telas.count else { return }
         let alvo = telas[item.tag - 1].visibleFrame
 
-        if janela.styleMask.contains(.fullScreen) { janela.toggleFullScreen(nil) }
-        janela.setFrame(alvo, display: true, animate: true)
+        if janelaTelao.styleMask.contains(.fullScreen) { janelaTelao.toggleFullScreen(nil) }
+        janelaTelao.setFrame(alvo, display: true, animate: true)
+        janelaTelao.makeKeyAndOrderFront(nil)
         escrever("telão movido para a tela \(item.tag) (\(Int(alvo.width))x\(Int(alvo.height)))")
     }
 
     @objc func alternarTelaCheia() {
-        janela.toggleFullScreen(nil)
+        janelaTelao.toggleFullScreen(nil)
+    }
+
+    @objc func mostrarControle() {
+        janelaControle.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func mostrarTelao() {
+        janelaTelao.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func recarregarTelas() {
+        webControle.reload()
+        webTelao.reload()
     }
 
     private func telaDoTotem() -> NSRect {
         let telas = NSScreen.screens
-        let padrao = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let padrao = NSScreen.screens.first?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
 
         if ProcessInfo.processInfo.environment["PHOTOBOOTH_TELA"] == "principal" { return padrao }
         guard telas.count > 1, let principal = telas.first else { return padrao }
@@ -123,13 +144,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         let externa = telas.first { $0 != principal }
         if let externa = externa {
             escrever("telão na tela externa (\(Int(externa.frame.width))x\(Int(externa.frame.height)))")
-            return externa.frame
+            return externa.visibleFrame
         }
         return padrao
     }
 
-    private func montarJanela() {
-        let tela = telaDoTotem()
+    private func configurarWeb() -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.mediaTypesRequiringUserActionForPlayback = []
+        config.preferences.setValue(false, forKey: "javaScriptCanOpenWindowsAutomatically")
+
+        let web = WKWebView(frame: .zero, configuration: config)
+        web.navigationDelegate = self
+        web.setValue(false, forKey: "drawsBackground")
+        return web
+    }
+
+    private func montarJanelas() {
+        let telaTelao = telaDoTotem()
+        let telaPrincipal = NSScreen.screens.first?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
         /* Janela normal por padrão.
            A versão anterior nascia sem borda e em tela cheia, e o
@@ -137,36 +172,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
            Um totem que prende quem opera é pior que um totem que mostra
            a barra de título: a tela cheia agora é um modo (CMD+F), não
            uma imposição. */
-        janela = JanelaDoTotem(contentRect: tela,
+        janelaTelao = JanelaDoTotem(contentRect: telaTelao,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered,
                           defer: false)
-        janela.title = "Globo Photo Booth"
-        janela.center()
+        janelaTelao.title = "Globo Photo Booth — Telão"
+        janelaTelao.isReleasedWhenClosed = false
         /* Tela cheia de totem, não de aplicativo.
            Uma janela borderless do tamanho da tela AINDA fica debaixo do
            Dock e da barra de menus — eles aparecem por cima da foto,
            quebrando a ilusão e dando ao convidado onde clicar. Subir o
            nível acima do menu resolve a sobreposição; esconder os dois
            resolve o resto. */
-        janela.backgroundColor = .white
-        janela.isOpaque = true
-        janela.collectionBehavior = [.fullScreenPrimary]
+        janelaTelao.backgroundColor = .white
+        janelaTelao.isOpaque = true
+        janelaTelao.collectionBehavior = [.fullScreenPrimary]
+        webTelao = configurarWeb()
+        janelaTelao.contentView = webTelao
 
-        let config = WKWebViewConfiguration()
-        // O preview é MJPEG numa <img>; nada precisa de gesto do usuário
-        // para começar a tocar.
-        config.mediaTypesRequiringUserActionForPlayback = []
+        janelaControle = NSWindow(contentRect: telaPrincipal,
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                  backing: .buffered,
+                                  defer: false)
+        janelaControle.title = "Globo Photo Booth — Controle"
+        janelaControle.isReleasedWhenClosed = false
+        janelaControle.backgroundColor = .white
+        janelaControle.isOpaque = true
+        janelaControle.collectionBehavior = [.fullScreenPrimary]
+        webControle = configurarWeb()
+        janelaControle.contentView = webControle
 
-        web = WKWebView(frame: tela, configuration: config)
-        web.navigationDelegate = self
-        web.setValue(false, forKey: "drawsBackground")
-
-        // Sem menu de contexto e sem seleção: é um totem, não um site.
-        web.configuration.preferences.setValue(false, forKey: "javaScriptCanOpenWindowsAutomatically")
-
-        janela.contentView = web
-        janela.makeKeyAndOrderFront(nil)
+        janelaTelao.orderFront(nil)
+        janelaControle.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         mostrar(html: telaDeEspera(mensagem: "Preparando o totem…"))
@@ -190,7 +227,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     private func mostrar(html: String) {
-        DispatchQueue.main.async { self.web.loadHTMLString(html, baseURL: nil) }
+        DispatchQueue.main.async {
+            self.webTelao.loadHTMLString(html, baseURL: nil)
+            self.webControle.loadHTMLString(html, baseURL: nil)
+        }
     }
 
     // MARK: - Node
@@ -218,12 +258,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     /// O macOS assume a câmera PTP assim que ela conecta e o gphoto2
     /// recebe "could not claim the USB device".
     private func liberarCamera() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        p.arguments = ["-x", "PTPCamera"]
-        p.standardError = Pipe()
-        try? p.run()
-        p.waitUntilExit()
+        for processo in ["PTPCamera", "icdd"] {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            p.arguments = ["-x", processo]
+            p.standardError = Pipe()
+            try? p.run()
+            p.waitUntilExit()
+        }
     }
 
     private func subirServidor(node: String) {
@@ -282,8 +324,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                 if pronto {
                     self.escrever("servidor no ar")
                     DispatchQueue.main.async {
-                        let url = URL(string: "http://localhost:\(PORTA)/totem.html")!
-                        self.web.load(URLRequest(url: url))
+                        let telão = URL(string: "http://localhost:\(PORTA)/totem.html")!
+                        let controle = URL(string: "http://localhost:\(PORTA)/control.html?code=TOTM&embedded=1")!
+                        self.webTelao.load(URLRequest(url: telão))
+                        self.webControle.load(URLRequest(url: controle))
+                        self.janelaControle.makeKeyAndOrderFront(nil)
                     }
                     return
                 }
@@ -370,7 +415,15 @@ let menu = NSMenu()
 
 let itemApp = NSMenuItem()
 let menuApp = NSMenu()
-menuApp.addItem(withTitle: "Recarregar telão", action: #selector(WKWebView.reload(_:)), keyEquivalent: "r")
+let recarregar = NSMenuItem(title: "Recarregar controle e telão", action: #selector(AppDelegate.recarregarTelas), keyEquivalent: "r")
+recarregar.target = delegate
+menuApp.addItem(recarregar)
+let abrirControle = NSMenuItem(title: "Mostrar controle", action: #selector(AppDelegate.mostrarControle), keyEquivalent: "o")
+abrirControle.target = delegate
+menuApp.addItem(abrirControle)
+let abrirTelao = NSMenuItem(title: "Mostrar telão", action: #selector(AppDelegate.mostrarTelao), keyEquivalent: "t")
+abrirTelao.target = delegate
+menuApp.addItem(abrirTelao)
 menuApp.addItem(NSMenuItem.separator())
 menuApp.addItem(withTitle: "Encerrar Photo Booth", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 itemApp.submenu = menuApp

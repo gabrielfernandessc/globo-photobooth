@@ -105,34 +105,112 @@
   .cena[data-ativa] { opacity: 1; pointer-events: auto; }
 
   /* ── Preview ── */
+  /* ── Preview dentro da moldura ──
+     O palco tem a proporção da ARTE e a janela ocupa, em porcentagem,
+     exatamente o retângulo transparente que o servidor mediu. É a mesma
+     geometria da composição final: o que o convidado vê aqui é o que
+     ele leva.
+
+     As porcentagens vêm do servidor em tempo de execução; os valores
+     abaixo são só o ponto de partida até a medição chegar. */
+  /* Quem dimensiona o palco é a PRÓPRIA moldura, em fluxo normal.
+     Tentar dimensionar por aspect-ratio com largura e altura automáticas
+     colapsa para zero — não há de onde derivar tamanho. A arte, sendo
+     uma imagem real, já se ajusta sozinha à tela e carrega a proporção
+     certa junto. */
+  #palcoPreview {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+    max-width: calc(100% - var(--s5));
+    max-height: calc(100% - var(--s5));
+    border-radius: var(--raio-mosaico);
+    overflow: hidden;
+  }
+
+  /* A moldura fica ACIMA do preview e é o elemento que define o
+     tamanho: por isso está no fluxo, e não posicionada. */
+  #molduraPreview {
+    position: relative;
+    z-index: 2;
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - var(--linha-multicolor) - var(--s6));
+    width: auto;
+    height: auto;
+    pointer-events: none;
+  }
+
+  /* Sem moldura o palco não teria tamanho nenhum; aí a janela volta a
+     ocupar a tela inteira e o preview aparece sem referência de corte. */
+  #palcoPreview:not(:has(#molduraPreview:not([hidden]))) {
+    display: grid;
+    width: 100%;
+    height: 100%;
+  }
+  #palcoPreview:not(:has(#molduraPreview:not([hidden]))) #janelaPreview {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+  }
+
+  #janelaPreview {
+    position: absolute;
+    left: var(--janela-x, 4.7%);
+    top: var(--janela-y, 5.2%);
+    width: var(--janela-w, 90.7%);
+    height: var(--janela-h, 70.6%);
+    background: var(--preto-5);
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+  }
+
+  /* cover, e não contain: a composição final também preenche a janela.
+     Mostrar barras aqui prometeria um enquadramento que a foto não tem. */
   #preview {
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    /* Preto 5% no letterbox: o manual não autoriza preto acima de 5%
-       como fundo, e o cinza claro ainda separa a imagem da tela. */
-    background: var(--preto-5);
+    object-fit: cover;
   }
 
-  /* A moldura sobreposta ao preview mostra o enquadramento REAL, para
-     o convidado se posicionar onde a foto vai de fato cortar. */
-  #molduraPreview {
+  /* Some assim que o primeiro quadro chega — quem cuida disso é o JS,
+     porque uma <img> de MJPEG não avisa quando trava. */
+  #semSinal {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    font-size: min(1.8vw, 22px);
+    color: var(--preto-50);
+  }
+  #semSinal[hidden] { display: none; }
+  .ponto {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--globo-azul);
+    animation: respira 1.6s ease-in-out infinite;
   }
 
   /* ── Contagem ──
      Escala display do manual, sem sombra: o manual proíbe efeitos. */
   #numero {
-    font-size: min(42vw, 42vh);
+    width: min(34vw, 34vh);
+    height: min(34vw, 34vh);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(255,255,255,.88);
+    font-size: min(24vw, 24vh);
     font-weight: 700;
     line-height: 1;
     color: var(--preto);
     animation: pulsa .9s ease-out;
+  }
+  .cena[data-cena="CONTAGEM"] {
+    z-index: 25;
+    background: transparent;
   }
   @keyframes pulsa {
     0%   { transform: scale(.55); opacity: 0; }
@@ -341,7 +419,10 @@
   #chamada {
     position: fixed;
     left: 50%;
-    bottom: calc(var(--linha-multicolor) + var(--s6));
+    /* No topo, e não na base: embaixo ela cobria o título e a hashtag
+       da arte do evento — justamente o que a moldura existe para
+       mostrar. */
+    top: var(--s5);
     transform: translateX(-50%);
     font-size: min(3vw, 38px);
     font-weight: 700;
@@ -382,16 +463,26 @@
   <!-- Sem câmera -->
   <section class="cena" data-cena="SEM_CAMERA">
     <div class="aviso">
-      <h1>Câmera desconectada</h1>
-      <p>Confira o cabo USB e se a câmera está ligada.<br>O totem religa sozinho assim que ela voltar.</p>
+      <h1 id="tituloCamera">Câmera desconectada</h1>
+      <p id="mensagemCamera">Confira o cabo USB e se a câmera está ligada.<br>O totem religa sozinho assim que ela voltar.</p>
       <code id="detalheCamera">procurando…</code>
     </div>
   </section>
 
   <!-- Pronto: preview ao vivo -->
+  <!-- Preview dentro da moldura real do evento: o convidado se
+       posiciona vendo exatamente o enquadramento que vai receber. -->
   <section class="cena" data-cena="PRONTO">
-    <img id="preview" alt="">
-    <img id="molduraPreview" alt="" hidden>
+    <div id="palcoPreview">
+      <img id="molduraPreview" alt="" hidden>
+      <div id="janelaPreview">
+        <img id="preview" alt="">
+        <div id="semSinal">
+          <span class="ponto"></span>
+          Aguardando a câmera
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- Contagem -->
@@ -435,7 +526,7 @@
 
 </div>
 
-<div id="chamada" hidden>Toque para fotografar</div>
+<div id="chamada" hidden>Aguardando o fotógrafo</div>
 <div id="flash"></div>
 <div id="tempoRestante" hidden></div>
 <pre id="diagnostico"></pre>
