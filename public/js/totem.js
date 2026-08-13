@@ -46,6 +46,7 @@
   };
 
   const cfg = window.__BOOTH__ || {};
+  const SESSAO = 'TOTM';
 
   const estado = {
     atual: 'BOOTING',
@@ -53,6 +54,8 @@
     ultimaFoto: null,
     temporizador: null,
     camera: null,
+    // null = não está na galeria; número = índice da foto revisitada
+    galeria: null,
   };
 
   /* ── Transição ────────────────────────────────────────── */
@@ -116,14 +119,21 @@
       el.flash.classList.add('dispara');
     },
 
-    RESULTADO({ foto }) {
+    RESULTADO({ foto, deVolta, posicao }) {
+      el.celebracao.textContent = deVolta ? (posicao || 'Sua foto') : proximaCelebracao();
       el.fotoFinal.src = foto.imageUrl;
       el.qr.src = foto.qrUrl;
-      el.celebracao.textContent = proximaCelebracao();
       marcarPublicacao(foto.share);
 
       // Tempo de olhar e escanear. A barra mostra quanto resta, para o
       // convidado não ser surpreendido pela volta ao preview.
+      if (deVolta) {
+        // Revisitada fica na tela até alguém sair: quem voltou para
+        // pegar o QR não pode ser expulso por um cronômetro.
+        el.tempo.hidden = true;
+        return;
+      }
+
       const SEGUNDOS = 22;
       el.tempo.style.transition = 'none';
       el.tempo.style.transform = 'scaleX(1)';
@@ -131,7 +141,7 @@
       el.tempo.style.transition = `transform ${SEGUNDOS}s linear`;
       el.tempo.style.transform = 'scaleX(0)';
 
-      estado.temporizador = setTimeout(() => ir('PRONTO'), SEGUNDOS * 1000);
+      estado.temporizador = setTimeout(() => { estado.galeria = null; ir('PRONTO'); }, SEGUNDOS * 1000);
     },
 
     ERRO({ mensagem }) {
@@ -262,10 +272,60 @@
     ir('CONTAGEM');
   }
 
-  document.addEventListener('click', pedirFoto);
+  /* ── Galeria ──────────────────────────────────────────
+     A tela de resultado volta ao preview sozinha, e o convidado que
+     demorou a pegar o celular perde o QR. Sem uma forma de voltar, a
+     única saída seria tirar outra foto — e a primeira, que era a boa,
+     fica inacessível.
+
+     As setas percorrem as fotos do evento; qualquer outra tecla ou o
+     toque volta ao preview. */
+
+  async function abrirGaleria(passo = -1) {
+    try {
+      const { photos } = await (await fetch(`/api/photos/${SESSAO}`)).json();
+      if (!photos.length) return;
+
+      estado.galeria = estado.galeria === null
+        ? photos.length - 1
+        : Math.min(photos.length - 1, Math.max(0, estado.galeria + passo));
+
+      const foto = photos[estado.galeria];
+      const alvo = foto.publicUrl || `${location.origin}${foto.page}`;
+
+      ir('RESULTADO', {
+        forcar: true,
+        deVolta: true,
+        foto: {
+          imageUrl: foto.url,
+          qrUrl: `/api/qr?size=520&data=${encodeURIComponent(alvo)}`,
+          share: { status: foto.publicUrl ? 'published' : 'local' },
+          pageUrl: foto.page,
+        },
+        posicao: `${estado.galeria + 1} de ${photos.length}`,
+      });
+    } catch (erro) {
+      console.warn('galeria indisponível', erro);
+    }
+  }
+
+  document.addEventListener('click', () => {
+    // Da galeria, o toque volta ao preview em vez de disparar: o
+    // convidado seguinte não deve fotografar por engano ao encostar.
+    if (estado.galeria !== null) { estado.galeria = null; ir('PRONTO'); return; }
+    pedirFoto();
+  });
+
   document.addEventListener('keydown', evento => {
+    if (evento.key === 'ArrowLeft' || evento.key === 'ArrowRight') {
+      evento.preventDefault();
+      abrirGaleria(evento.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
+
     if (evento.code === 'Space' || evento.code === 'Enter') {
       evento.preventDefault();
+      if (estado.galeria !== null) { estado.galeria = null; ir('PRONTO'); return; }
       pedirFoto();
       return;
     }
