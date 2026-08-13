@@ -118,12 +118,18 @@
      colapsa para zero — não há de onde derivar tamanho. A arte, sendo
      uma imagem real, já se ajusta sozinha à tela e carrega a proporção
      certa junto. */
+  /* Fundo em preto 5% na cena do preview.
+     Branco puro deixava a arte flutuando num vazio; o cinza claro —
+     autorizado pelo manual como fundo — faz a moldura ler como cartão
+     e dá acabamento sem competir com ela. */
+  .cena[data-cena="PRONTO"] { background: var(--preto-5); }
+
   #palcoPreview {
     position: relative;
     display: inline-block;
     line-height: 0;
-    max-width: calc(100% - var(--s5));
-    max-height: calc(100% - var(--s5));
+    max-width: calc(100% - var(--s4));
+    max-height: calc(100% - var(--s4));
     border-radius: var(--raio-mosaico);
     overflow: hidden;
   }
@@ -135,7 +141,7 @@
     z-index: 2;
     display: block;
     max-width: 100%;
-    max-height: calc(100vh - var(--linha-multicolor) - var(--s6));
+    max-height: calc(100vh - var(--linha-multicolor) - var(--s5));
     width: auto;
     height: auto;
     pointer-events: none;
@@ -426,7 +432,7 @@
     transform: translateX(-50%);
     font-size: min(3vw, 38px);
     font-weight: 700;
-    padding: var(--s4) var(--s6);
+    padding: var(--s3) var(--s5);
     border-radius: var(--raio-mosaico);
     background: var(--branco);
     color: var(--preto);
