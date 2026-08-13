@@ -233,3 +233,26 @@ test('id de foto forjado responde 404 e não vaza caminho do disco', async () =>
     assert.doesNotMatch(await resp.text(), new RegExp(UPLOADS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 });
+
+test('o QR nunca aponta para localhost', async () => {
+  // O telão roda em localhost, então o host da requisição é
+  // "localhost:3000". Um convidado que escaneasse isso tentaria abrir a
+  // foto no próprio celular — o QR aparece bonito e não funciona para
+  // ninguém. É o defeito mais silencioso que este produto pode ter.
+  const { code } = await novaSessao();
+  const { body } = await enviarFoto(code, await fixtures.solidJpeg({ width: 1200, height: 1600 }));
+
+  const alvo = decodeURIComponent(
+    /data=([^&]+)/.exec(`/api/qr?data=${encodeURIComponent(`http://localhost:9999${body.data.pageUrl}`)}`)[1]
+  );
+  assert.match(alvo, /localhost/, 'a fixture precisa mesmo conter localhost para o teste valer');
+
+  // E o endereço que o servidor monta para o QR não pode ser local.
+  const { primaryLanAddress } = require('../lib/network');
+  const lan = primaryLanAddress();
+  if (!lan) return; // máquina sem rede: nada a garantir
+
+  const capturaUrl = `http://${lan}:3000${body.data.pageUrl}`;
+  assert.doesNotMatch(capturaUrl, /localhost|127\.0\.0\.1/);
+  assert.match(capturaUrl, /^http:\/\/\d+\.\d+\.\d+\.\d+:/, 'o QR precisa carregar um IP alcançável');
+});

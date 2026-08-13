@@ -41,132 +41,28 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# ── O executável ──────────────────────────────────────────
-cat > "$APP/Contents/MacOS/totem" <<'LANCADOR'
-#!/bin/bash
-# O totem, do jeito que o operador vê: duplo clique e pronto.
-set -uo pipefail
-
-REPO="__REPO__"
-PORTA="${PHOTOBOOTH_PORT:-3000}"
-LOGS="$REPO/logs"
-mkdir -p "$LOGS"
-LOG="$LOGS/totem-$(date +%Y-%m-%d).log"
-
-diz() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-
-# Diálogo nativo: um app aberto pelo Finder não tem terminal para onde
-# gritar, e um erro invisível é um erro que ninguém conserta.
-alerta() {
-  diz "ERRO: $1 — $2"
-  osascript -e "display alert \"Photo Booth não abriu\" message \"$1\n\n$2\" as critical" >/dev/null 2>&1
+# ── O executável ────────────────────────────────────────
+# Binário Swift de verdade, não script shell: o telão roda dentro de um
+# WKWebView em tela cheia, sem Chrome instalado, sem barra e sem ESC
+# para o convidado encontrar. O miolo continua sendo o servidor Node,
+# que já está medido com a câmera real.
+if ! command -v swiftc >/dev/null 2>&1; then
+  echo "  swiftc não encontrado. Instale as Command Line Tools:"
+  echo "    xcode-select --install"
   exit 1
-}
-
-# ── PATH ──
-# Um app aberto pelo Finder recebe só /usr/bin:/bin:/usr/sbin:/sbin.
-# O node do Homebrew não está lá, e é por isso que tanto lançador de
-# .app "funciona no terminal e não funciona no duplo clique".
-export PATH="/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/sbin:$PATH"
-
-NODE="$(command -v node || true)"
-[ -z "$NODE" ] && for c in /opt/homebrew/bin/node /usr/local/bin/node; do
-  [ -x "$c" ] && NODE="$c" && break
-done
-[ -z "$NODE" ] && alerta "O Node.js não foi encontrado." "Instale a versão 22 ou maior em nodejs.org e abra o Photo Booth de novo."
-
-MAIOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
-[ "$MAIOR" -lt 22 ] && alerta "O Node.js instalado é a versão $MAIOR." "O totem precisa da 22 ou maior. Atualize em nodejs.org."
-
-cd "$REPO" || alerta "A pasta do projeto sumiu." "Esperava encontrar: $REPO"
-
-diz "===== Photo Booth iniciando ====="
-diz "node $("$NODE" -v) em $NODE"
-
-# ── Uma instância só ──
-# Duas instâncias na mesma porta significam dois bancos sobre o mesmo
-# arquivo e fotos indo para o lugar errado.
-if lsof -ti :"$PORTA" -sTCP:LISTEN >/dev/null 2>&1; then
-  DONO="$(lsof -ti :"$PORTA" -sTCP:LISTEN | head -1)"
-  alerta "A porta $PORTA já está ocupada (PID $DONO)." "O Photo Booth provavelmente já está aberto. Encerre-o pelo Dock antes de abrir de novo."
 fi
 
-[ ! -d node_modules ] && { diz "Instalando dependências (primeira vez, demora)…"; npm ci --no-audit --no-fund >>"$LOG" 2>&1 || alerta "A instalação das dependências falhou." "Confira a internet e veja $LOG"; }
+echo "  Compilando o app nativo…"
+FONTE="$(mktemp -d)/PhotoBooth.swift"
+# O caminho do repositório é fixado na compilação: o .app pode ir para
+# /Applications sem perder de vista onde o projeto mora.
+/usr/bin/sed "s|__REPO__|$RAIZ|g" "$RAIZ/mac/PhotoBooth.swift" > "$FONTE"
 
-# ── A câmera ──
-# O macOS assume a câmera PTP assim que ela conecta, e o gphoto2 recebe
-# "could not claim the USB device". Derrubar o PTPCamera é obrigatório.
-pkill -x PTPCamera >/dev/null 2>&1 && diz "PTPCamera do macOS derrubado (ele disputa a câmera)"
-
-# ── Não deixar a máquina dormir no meio do evento ──
-caffeinate -dimsu -w $$ >/dev/null 2>&1 &
-diz "Suspensão automática desativada enquanto o totem estiver aberto"
-
-# ── Servidor ──
-# PORT precisa ser exportado: sem isto o servidor sobe na porta padrão
-# enquanto o lançador confere outra, e um totem saudável é declarado
-# quebrado.
-export PORT="$PORTA"
-"$NODE" server.js >>"$LOG" 2>&1 &
-SERVIDOR=$!
-diz "Servidor subindo (PID $SERVIDOR)"
-
-encerrar() {
-  diz "Encerrando…"
-  # SIGTERM para o server.js fechar o WAL do SQLite e derrubar os
-  # streams de preview; só depois se força.
-  kill -TERM "$SERVIDOR" 2>/dev/null
-  for _ in $(seq 1 20); do kill -0 "$SERVIDOR" 2>/dev/null || break; sleep 0.25; done
-  kill -9 "$SERVIDOR" 2>/dev/null
-  diz "===== Photo Booth encerrado ====="
-}
-trap encerrar EXIT INT TERM
-
-# Espera o servidor RESPONDER, não apenas existir: processo vivo com
-# porta muda é o pior estado possível para quem está operando.
-PRONTO=""
-for _ in $(seq 1 60); do
-  kill -0 "$SERVIDOR" 2>/dev/null || alerta "O servidor fechou sozinho durante o boot." "As últimas linhas estão em $LOG"
-  if curl -sf -m 2 "http://localhost:$PORTA/api/health" >/dev/null 2>&1; then PRONTO=1; break; fi
-  sleep 0.5
-done
-[ -z "$PRONTO" ] && alerta "O servidor não respondeu em 30 segundos." "Veja $LOG"
-
-diz "Servidor no ar em http://localhost:$PORTA"
-
-IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo '')"
-[ -n "$IP" ] && diz "Endereço na rede local: http://$IP:$PORTA"
-
-# ── Telão ──
-# Perfil próprio: o totem não herda abas, extensões nem sessão do
-# navegador pessoal de quem estiver usando o Mac.
-PERFIL="$HOME/Library/Application Support/GloboPhotoBooth/chrome"
-mkdir -p "$PERFIL"
-ALVO="http://localhost:$PORTA/totem.html"
-
-if [ -n "${PHOTOBOOTH_SEM_TELAO:-}" ]; then
-  # Diagnóstico: sobe o servidor sem tomar a tela.
-  diz "Modo sem telão: abra manualmente $ALVO"
-elif [ -d "/Applications/Google Chrome.app" ]; then
-  open -na "Google Chrome" --args \
-    --kiosk "$ALVO" --user-data-dir="$PERFIL" \
-    --autoplay-policy=no-user-gesture-required \
-    --disable-session-crashed-bubble --noerrdialogs --disable-infobars
-  diz "Telão aberto no Chrome (ESC ou CMD+Q para sair da tela cheia)"
-else
-  open "$ALVO"
-  diz "Chrome não encontrado; o telão abriu no navegador padrão"
-fi
-
-osascript -e 'display notification "Telão aberto. Encerre pelo Dock ao fim do evento." with title "Globo Photo Booth" subtitle "Totem pronto"' >/dev/null 2>&1
-
-# Segura o app vivo. Encerrar pelo Dock manda TERM e cai no trap.
-wait "$SERVIDOR"
-LANCADOR
-
-# O caminho do repositório é fixado na montagem: o .app pode ser movido
-# para /Applications sem perder de vista onde o projeto mora.
-/usr/bin/sed -i '' "s|__REPO__|$RAIZ|g" "$APP/Contents/MacOS/totem"
+swiftc -O -o "$APP/Contents/MacOS/totem" "$FONTE" \
+  -framework Cocoa -framework WebKit || {
+    echo "  A compilação falhou."
+    exit 1
+  }
 chmod +x "$APP/Contents/MacOS/totem"
 
 # ── Ícone ─────────────────────────────────────────────────
