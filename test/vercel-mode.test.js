@@ -152,3 +152,31 @@ test('a URL do original também não vaza neste modo', async () => {
   const { body } = await fotografar(code, await fixtures.quadrantJpeg({ width: 1600, height: 1200 }));
   assert.doesNotMatch(JSON.stringify(body), /original/i);
 });
+
+test('na nuvem as telas do totem não são servidas', async () => {
+  // O convidado que abre a raiz não pode cair numa página pedindo webcam
+  // e pareamento por QR: essas telas só fazem sentido no computador que
+  // tem a câmera cabeada. Na nuvem o app entrega fotos, e mais nada.
+  const anterior = require('../lib/config').config.isVercel;
+  require('../lib/config').config.isVercel = true;
+
+  delete require.cache[require.resolve('../lib/app')];
+  const nuvem = await require('../lib/app').createApp();
+  await new Promise(r => nuvem.server.listen(0, '127.0.0.1', r));
+  const alvo = `http://127.0.0.1:${nuvem.server.address().port}`;
+
+  try {
+    for (const rota of ['/', '/totem.html', '/display.html', '/camera.html', '/control.html']) {
+      const resp = await fetch(`${alvo}${rota}`);
+      assert.equal(resp.status, 200, `${rota} deveria responder`);
+
+      const html = await resp.text();
+      assert.doesNotMatch(html, /getUserMedia|navigator\.mediaDevices/i, `${rota} ainda pede câmera do navegador`);
+      assert.doesNotMatch(html, /pareamento|parear|escaneie o qr.*conectar/i, `${rota} ainda oferece pareamento`);
+      assert.match(html, /Globo Photo Booth/);
+    }
+  } finally {
+    await new Promise(r => nuvem.server.close(r));
+    require('../lib/config').config.isVercel = anterior;
+  }
+});
