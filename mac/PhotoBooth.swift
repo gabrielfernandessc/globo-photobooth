@@ -68,8 +68,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     // MARK: - Janela
 
+    /**
+     Em qual tela o totem abre.
+
+     Num evento há duas: a do Mac, onde o operador trabalha, e o telão
+     ligado por HDMI. O convidado olha o telão — então é ele que recebe
+     a tela cheia, e o operador fica com a máquina livre para o painel
+     e para o Finder.
+
+     A tela com a barra de menus é sempre a principal do sistema; a
+     outra é a externa. Com uma tela só, não há escolha a fazer.
+
+     PHOTOBOOTH_TELA=principal força o comportamento antigo, para quando
+     o Mac estiver ligado direto na TV sem segundo monitor.
+     */
+    private func telaDoTotem() -> NSRect {
+        let telas = NSScreen.screens
+        let padrao = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+
+        if ProcessInfo.processInfo.environment["PHOTOBOOTH_TELA"] == "principal" { return padrao }
+        guard telas.count > 1, let principal = telas.first else { return padrao }
+
+        let externa = telas.first { $0 != principal }
+        if let externa = externa {
+            escrever("telão na tela externa (\(Int(externa.frame.width))x\(Int(externa.frame.height)))")
+            return externa.frame
+        }
+        return padrao
+    }
+
     private func montarJanela() {
-        let tela = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let tela = telaDoTotem()
 
         // .borderless: o totem não tem barra de título para arrastar nem
         // botão de fechar ao alcance de um convidado curioso.
@@ -77,10 +106,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                           styleMask: [.borderless],
                           backing: .buffered,
                           defer: false)
-        janela.level = .normal
+        /* Tela cheia de totem, não de aplicativo.
+           Uma janela borderless do tamanho da tela AINDA fica debaixo do
+           Dock e da barra de menus — eles aparecem por cima da foto,
+           quebrando a ilusão e dando ao convidado onde clicar. Subir o
+           nível acima do menu resolve a sobreposição; esconder os dois
+           resolve o resto. */
+        janela.level = .mainMenu + 1
         janela.backgroundColor = .white
         janela.isOpaque = true
-        janela.collectionBehavior = [.fullScreenPrimary]
+        janela.collectionBehavior = [.fullScreenPrimary, .canJoinAllSpaces, .stationary]
+        janela.hidesOnDeactivate = false
 
         let config = WKWebViewConfiguration()
         // O preview é MJPEG numa <img>; nada precisa de gesto do usuário
@@ -97,6 +133,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         janela.contentView = web
         janela.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        /* Dock e barra de menus somem enquanto o totem está ativo.
+           CMD+TAB continua funcionando de propósito: prender o operador
+           dentro do app seria pior que um convidado ver o Dock. */
+        NSApp.presentationOptions = [.hideDock, .hideMenuBar]
+
+        // Se o operador trocar de app e voltar, a tela cheia tem que
+        // voltar junto — senão o Dock reaparece no meio do evento.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil, queue: .main
+        ) { _ in
+            NSApp.presentationOptions = [.hideDock, .hideMenuBar]
+            self.janela.level = .mainMenu + 1
+            self.janela.makeKeyAndOrderFront(nil)
+        }
 
         mostrar(html: telaDeEspera(mensagem: "Preparando o totem…"))
     }
