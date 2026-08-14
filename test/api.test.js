@@ -20,6 +20,10 @@ process.env.DATABASE_FILE = path.join(UPLOADS, 'booth.sqlite');
 // Sem moldura padrao: estes testes afirmam sobre a foto crua. A
 // moldura do projeto tem teste proprio.
 process.env.DEFAULT_FRAME = '/inexistente/sem-moldura.png';
+// FRAMES_DIR junto: a moldura padrao agora e procurada por
+// proporcao dentro da pasta, entao desligar so o DEFAULT_FRAME
+// deixaria os arquivos do projeto entrarem no teste.
+process.env.FRAMES_DIR = '/inexistente/frames';
 process.env.SAVE_TO_DOWNLOADS = 'false';
 process.env.ENABLE_HTTPS = 'false';
 // Teste jamais toca no hardware: sem isto a suite disputa o USB com o

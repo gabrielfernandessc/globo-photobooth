@@ -29,6 +29,10 @@ process.env.UPLOADS_DIR = path.join(TEMP, 'uploads');
 process.env.DATA_DIR = TEMP;
 process.env.DATABASE_FILE = path.join(TEMP, 'booth.sqlite');
 process.env.DEFAULT_FRAME = '/inexistente/sem-moldura.png';
+// FRAMES_DIR junto: a moldura padrao agora e procurada por
+// proporcao dentro da pasta, entao desligar so o DEFAULT_FRAME
+// deixaria os arquivos do projeto entrarem no teste.
+process.env.FRAMES_DIR = '/inexistente/frames';
 process.env.SAVE_TO_DOWNLOADS = 'false';
 process.env.ENABLE_HTTPS = 'false';
 process.env.CAMERA_SOURCE = 'gphoto';

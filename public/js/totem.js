@@ -207,8 +207,16 @@
     if (!el.palcoPreview || !el.molduraPreview) return;
 
     try {
-      const g = await (await fetch(`/api/frame/${SESSAO}/geometria`)).json();
-      if (!g.temMoldura || !g.janela) return;
+      const g = await (await fetch(
+        `/api/frame/${SESSAO}/geometria?ratio=${encodeURIComponent(estado.aspectRatio)}`
+      )).json();
+      if (!g.temMoldura || !g.janela) {
+        // Sem arte para esta orientação, some com a anterior: manter a
+        // moldura errada prometeria um enquadramento que a foto não tem.
+        el.molduraPreview.hidden = true;
+        el.molduraPreview.removeAttribute('src');
+        return;
+      }
 
       const raiz = document.documentElement.style;
       raiz.setProperty('--moldura-proporcao', `${g.moldura.largura} / ${g.moldura.altura}`);
@@ -614,7 +622,14 @@
     socket.on('start-countdown', ({ timer, requestId } = {}) => pedirFoto(timer, requestId));
     socket.on('settings-updated', settings => {
       estado.contagemSegundos = Number(settings?.timer) || estado.contagemSegundos;
+      const anterior = estado.aspectRatio;
       estado.aspectRatio = settings?.aspectRatio || estado.aspectRatio;
+
+      /* Girar a proporção no painel troca a arte no telão na hora. Sem
+         isto o convidado se posicionaria pela moldura antiga e receberia
+         a foto na nova — o descompasso que a janela medida existe para
+         eliminar. */
+      if (estado.aspectRatio !== anterior) montarMolduraDoPreview();
     });
     socket.on('show-photo', ({ photo } = {}) => { if (photo) fotoRevisitada(photo); });
     socket.on('reset-to-preview', () => {

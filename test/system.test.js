@@ -43,6 +43,7 @@ async function subirServidor(extraEnv = {}) {
       BLOB_READ_WRITE_TOKEN: '',
       PUBLIC_BASE_URL: '',
       DEFAULT_FRAME: '/inexistente/sem-moldura.png',
+      FRAMES_DIR: '/inexistente/frames',
       DATA_DIR: dataDir,
       UPLOADS_DIR: path.join(dataDir, 'uploads'),
       DATABASE_FILE: path.join(dataDir, 'booth.sqlite'),

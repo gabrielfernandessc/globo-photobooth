@@ -17,6 +17,10 @@ process.env.UPLOADS_DIR = UPLOADS;
 // Sem moldura padrao: estes testes afirmam sobre a foto crua. A
 // moldura do projeto tem teste proprio.
 process.env.DEFAULT_FRAME = '/inexistente/sem-moldura.png';
+// FRAMES_DIR junto: a moldura padrao agora e procurada por
+// proporcao dentro da pasta, entao desligar so o DEFAULT_FRAME
+// deixaria os arquivos do projeto entrarem no teste.
+process.env.FRAMES_DIR = '/inexistente/frames';
 process.env.SAVE_TO_DOWNLOADS = 'false';
 
 const test = require('node:test');
@@ -257,5 +261,75 @@ test('a moldura padrão do projeto é usada quando a sessão não tem uma', asyn
   } finally {
     config.defaultFramePath = anterior;
     delete require.cache[require.resolve('../lib/photo')];
+  }
+});
+
+test('cada proporção usa a moldura do seu arquivo', async () => {
+  // O operador gira a orientação no painel e a arte tem de acompanhar —
+  // no preview e na foto. Sem isto o convidado se posiciona por uma
+  // moldura e recebe a outra.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-molduras-'));
+  fs.writeFileSync(path.join(dir, 'vertical.png'),
+    await fixtures.framePng({ width: 1080, height: 1440, border: 0.05 }));
+  fs.writeFileSync(path.join(dir, 'horizontal.png'),
+    await fixtures.framePng({ width: 1440, height: 1080, border: 0.05 }));
+
+  const { config } = require('../lib/config');
+  const anteriorDir = config.framesDir;
+  const anteriorPadrao = config.defaultFramePath;
+  config.framesDir = dir;
+  config.defaultFramePath = null;
+
+  delete require.cache[require.resolve('../lib/photo')];
+  const photo = require('../lib/photo');
+
+  try {
+    const input = await fixtures.quadrantJpeg({ width: 3000, height: 3000 });
+
+    const emPe = await photo.composeFinalPhoto(input, { aspectRatio: '3:4' });
+    const deitado = await photo.composeFinalPhoto(input, { aspectRatio: '4:3' });
+
+    assert.equal(emPe.meta.frameApplied, true);
+    assert.equal(deitado.meta.frameApplied, true);
+
+    // A arte vertical é mais alta que larga; a horizontal, o contrário.
+    assert.ok(emPe.meta.finalHeight > emPe.meta.finalWidth,
+      `3:4 deveria sair em pé, veio ${emPe.meta.finalWidth}x${emPe.meta.finalHeight}`);
+    assert.ok(deitado.meta.finalWidth > deitado.meta.finalHeight,
+      `4:3 deveria sair deitado, veio ${deitado.meta.finalWidth}x${deitado.meta.finalHeight}`);
+  } finally {
+    config.framesDir = anteriorDir;
+    config.defaultFramePath = anteriorPadrao;
+    delete require.cache[require.resolve('../lib/photo')];
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('proporção sem arquivo próprio cai na moldura padrão', async () => {
+  // Um totem com uma arte só continua funcionando nas duas orientações.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-so-padrao-'));
+  fs.writeFileSync(path.join(dir, 'padrao.png'),
+    await fixtures.framePng({ width: 1200, height: 1200, border: 0.08 }));
+
+  const { config } = require('../lib/config');
+  const anteriorDir = config.framesDir;
+  const anteriorPadrao = config.defaultFramePath;
+  config.framesDir = dir;
+  config.defaultFramePath = null;
+
+  delete require.cache[require.resolve('../lib/photo')];
+  const photo = require('../lib/photo');
+
+  try {
+    const input = await fixtures.solidJpeg({ width: 2000, height: 2000 });
+    for (const ratio of ['3:4', '4:3']) {
+      const { meta } = await photo.composeFinalPhoto(input, { aspectRatio: ratio });
+      assert.equal(meta.frameApplied, true, `${ratio} ficou sem moldura`);
+    }
+  } finally {
+    config.framesDir = anteriorDir;
+    config.defaultFramePath = anteriorPadrao;
+    delete require.cache[require.resolve('../lib/photo')];
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
