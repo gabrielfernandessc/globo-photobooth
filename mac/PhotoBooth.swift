@@ -51,8 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     // MARK: - Ciclo de vida
 
+    /* Token da atividade que mantém o app vivo. Precisa ficar guardado:
+       descartá-lo devolve ao macOS a permissão de encerrar o processo. */
+    var atividade: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         abrirLog()
+        protegerContraEncerramento()
         montarJanelas()
 
         guard let node = acharNode() else {
@@ -72,10 +77,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         esperarServidor()
     }
 
+    /**
+     Impede o macOS de encerrar o totem sozinho.
+
+     O app fechava "do nada" depois de alguns minutos parado — sem
+     crash, com desligamento limpo no log. Era o sistema aplicando
+     terminação automática a um processo que ele julgava ocioso: um
+     totem entre convidados não recebe evento nenhum e parece
+     abandonado.
+
+     beginActivity é a forma correta de dizer "estou trabalhando": ela
+     desliga de uma vez a terminação automática, a terminação súbita e
+     o App Nap, que também suspenderia o preview.
+
+     Num evento a máquina também não pode dormir, e por isso o sono
+     ocioso entra na lista.
+     */
+    private func protegerContraEncerramento() {
+        atividade = ProcessInfo.processInfo.beginActivity(
+            options: [.automaticTerminationDisabled, .suddenTerminationDisabled,
+                      .userInitiated, .idleSystemSleepDisabled, .idleDisplaySleepDisabled],
+            reason: "Totem em evento: captura, preview e fila de publicação"
+        )
+        ProcessInfo.processInfo.disableSuddenTermination()
+        ProcessInfo.processInfo.disableAutomaticTermination("totem de evento em operação")
+        escrever("proteção contra encerramento automático ativada")
+    }
+
     /// Encerrar a janela encerra o evento: sem isto o Node sobreviveria
     /// ao app e a próxima abertura acharia a porta ocupada.
     func applicationWillTerminate(_ notification: Notification) {
         encerrarServidor()
+    }
+
+    /* Clicar no ícone do Dock traz o telão de volta. Sem isto, uma
+       janela fechada por engano deixaria o app rodando invisível, e o
+       operador só teria a saída de encerrar tudo. */
+    func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows visiveis: Bool) -> Bool {
+        if !visiveis { janelaTelao?.makeKeyAndOrderFront(nil) }
+        return true
     }
 
     /* Falso de propósito: se a janela sumir por qualquer motivo — tela

@@ -37,6 +37,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key>          <string>icone</string>
   <key>LSMinimumSystemVersion</key>    <string>12.0</string>
   <key>NSHighResolutionCapable</key>   <true/>
+  <!-- O macOS encerrava o totem sozinho depois de minutos parado, por
+       julgá-lo ocioso. Um totem entre convidados não recebe evento
+       nenhum e parece abandonado; declarar isso no plist é a primeira
+       barreira, e beginActivity no código é a segunda. -->
+  <key>NSSupportsAutomaticTermination</key> <false/>
+  <key>NSSupportsSuddenTermination</key>    <false/>
 </dict>
 </plist>
 PLIST
